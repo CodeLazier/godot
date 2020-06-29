@@ -487,6 +487,10 @@ ObjectID Node3DEditorViewport::_select_ray(const Point2 &p_pos, bool p_append, b
 	Vector3 pos = _get_ray_pos(p_pos);
 	Vector2 shrinked_pos = p_pos / subviewport_container->get_stretch_shrink();
 
+	if (viewport->get_debug_draw() == Viewport::DEBUG_DRAW_SDFGI_PROBES) {
+		RS::get_singleton()->sdfgi_set_debug_probe_select(pos, ray);
+	}
+
 	Vector<ObjectID> instances = RenderingServer::get_singleton()->instances_cull_ray(pos, ray, get_tree()->get_root()->get_world_3d()->get_scenario());
 	Set<Ref<EditorNode3DGizmo>> found_gizmos;
 
@@ -2106,12 +2110,7 @@ void Node3DEditorViewport::_nav_orbit(Ref<InputEventWithModifiers> p_event, cons
 		cursor.x_rot += p_relative.y * radians_per_pixel;
 	}
 	cursor.y_rot += p_relative.x * radians_per_pixel;
-	if (cursor.x_rot > Math_PI / 2.0) {
-		cursor.x_rot = Math_PI / 2.0;
-	}
-	if (cursor.x_rot < -Math_PI / 2.0) {
-		cursor.x_rot = -Math_PI / 2.0;
-	}
+	cursor.x_rot = CLAMP(cursor.x_rot, -1.57, 1.57);
 	name = "";
 	_update_name();
 }
@@ -2139,12 +2138,7 @@ void Node3DEditorViewport::_nav_look(Ref<InputEventWithModifiers> p_event, const
 		cursor.x_rot += p_relative.y * radians_per_pixel;
 	}
 	cursor.y_rot += p_relative.x * radians_per_pixel;
-	if (cursor.x_rot > Math_PI / 2.0) {
-		cursor.x_rot = Math_PI / 2.0;
-	}
-	if (cursor.x_rot < -Math_PI / 2.0) {
-		cursor.x_rot = -Math_PI / 2.0;
-	}
+	cursor.x_rot = CLAMP(cursor.x_rot, -1.57, 1.57);
 
 	// Look is like the opposite of Orbit: the focus point rotates around the camera
 	Transform camera_transform = to_camera_transform(cursor);
@@ -2994,7 +2988,9 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 		case VIEW_DISPLAY_DEBUG_SSAO:
 		case VIEW_DISPLAY_DEBUG_PSSM_SPLITS:
 		case VIEW_DISPLAY_DEBUG_DECAL_ATLAS:
-		case VIEW_DISPLAY_DEBUG_ROUGHNESS_LIMITER: {
+		case VIEW_DISPLAY_DEBUG_SDFGI:
+		case VIEW_DISPLAY_DEBUG_SDFGI_PROBES:
+		case VIEW_DISPLAY_DEBUG_GI_BUFFER: {
 			static const int display_options[] = {
 				VIEW_DISPLAY_NORMAL,
 				VIEW_DISPLAY_WIREFRAME,
@@ -3010,9 +3006,11 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 				VIEW_DISPLAY_DEBUG_GIPROBE_EMISSION,
 				VIEW_DISPLAY_DEBUG_SCENE_LUMINANCE,
 				VIEW_DISPLAY_DEBUG_SSAO,
-				VIEW_DISPLAY_DEBUG_ROUGHNESS_LIMITER,
+				VIEW_DISPLAY_DEBUG_GI_BUFFER,
 				VIEW_DISPLAY_DEBUG_PSSM_SPLITS,
 				VIEW_DISPLAY_DEBUG_DECAL_ATLAS,
+				VIEW_DISPLAY_DEBUG_SDFGI,
+				VIEW_DISPLAY_DEBUG_SDFGI_PROBES,
 				VIEW_MAX
 			};
 			static const Viewport::DebugDraw debug_draw_modes[] = {
@@ -3030,9 +3028,11 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 				Viewport::DEBUG_DRAW_GI_PROBE_EMISSION,
 				Viewport::DEBUG_DRAW_SCENE_LUMINANCE,
 				Viewport::DEBUG_DRAW_SSAO,
-				Viewport::DEBUG_DRAW_ROUGHNESS_LIMITER,
+				Viewport::DEBUG_DRAW_GI_BUFFER,
 				Viewport::DEBUG_DRAW_PSSM_SPLITS,
 				Viewport::DEBUG_DRAW_DECAL_ATLAS,
+				Viewport::DEBUG_DRAW_SDFGI,
+				Viewport::DEBUG_DRAW_SDFGI_PROBES,
 			};
 
 			int idx = 0;
@@ -3218,7 +3218,7 @@ void Node3DEditorViewport::update_transform_gizmo_view() {
 	Vector3 camz = -camera_xform.get_basis().get_axis(2).normalized();
 	Vector3 camy = -camera_xform.get_basis().get_axis(1).normalized();
 	Plane p(camera_xform.origin, camz);
-	float gizmo_d = Math::abs(p.distance_to(xform.origin));
+	float gizmo_d = MAX(Math::abs(p.distance_to(xform.origin)), CMP_EPSILON);
 	float d0 = camera->unproject_position(camera_xform.origin + camz * gizmo_d).y;
 	float d1 = camera->unproject_position(camera_xform.origin + camz * gizmo_d + camy).y;
 	float dd = Math::abs(d0 - d1);
@@ -3908,11 +3908,14 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, Edito
 	display_submenu->add_radio_check_item(TTR("GIProbe Albedo"), VIEW_DISPLAY_DEBUG_GIPROBE_ALBEDO);
 	display_submenu->add_radio_check_item(TTR("GIProbe Emission"), VIEW_DISPLAY_DEBUG_GIPROBE_EMISSION);
 	display_submenu->add_separator();
+	display_submenu->add_radio_check_item(TTR("SDFGI Cascades"), VIEW_DISPLAY_DEBUG_SDFGI);
+	display_submenu->add_radio_check_item(TTR("SDFGI Probes"), VIEW_DISPLAY_DEBUG_SDFGI_PROBES);
+	display_submenu->add_separator();
 	display_submenu->add_radio_check_item(TTR("Scene Luminance"), VIEW_DISPLAY_DEBUG_SCENE_LUMINANCE);
 	display_submenu->add_separator();
 	display_submenu->add_radio_check_item(TTR("SSAO"), VIEW_DISPLAY_DEBUG_SSAO);
 	display_submenu->add_separator();
-	display_submenu->add_radio_check_item(TTR("Roughness Limiter"), VIEW_DISPLAY_DEBUG_ROUGHNESS_LIMITER);
+	display_submenu->add_radio_check_item(TTR("GI Buffer"), VIEW_DISPLAY_DEBUG_GI_BUFFER);
 	display_submenu->set_name("display_advanced");
 	view_menu->get_popup()->add_submenu_item(TTR("Display Advanced..."), "display_advanced", VIEW_DISPLAY_ADVANCED);
 	view_menu->get_popup()->add_separator();
@@ -4958,7 +4961,7 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 
 			for (List<Node *>::Element *E = selection.front(); E; E = E->next()) {
 				Node3D *spatial = Object::cast_to<Node3D>(E->get());
-				if (!spatial || !spatial->is_visible_in_tree()) {
+				if (!spatial || !spatial->is_inside_tree()) {
 					continue;
 				}
 
@@ -4972,8 +4975,8 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 				undo_redo->add_undo_method(this, "emit_signal", "item_lock_status_changed");
 			}
 
-			undo_redo->add_do_method(this, "_refresh_menu_icons", Variant());
-			undo_redo->add_undo_method(this, "_refresh_menu_icons", Variant());
+			undo_redo->add_do_method(this, "_refresh_menu_icons");
+			undo_redo->add_undo_method(this, "_refresh_menu_icons");
 			undo_redo->commit_action();
 		} break;
 		case MENU_UNLOCK_SELECTED: {
@@ -4983,7 +4986,7 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 
 			for (List<Node *>::Element *E = selection.front(); E; E = E->next()) {
 				Node3D *spatial = Object::cast_to<Node3D>(E->get());
-				if (!spatial || !spatial->is_visible_in_tree()) {
+				if (!spatial || !spatial->is_inside_tree()) {
 					continue;
 				}
 
@@ -4997,8 +5000,8 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 				undo_redo->add_undo_method(this, "emit_signal", "item_lock_status_changed");
 			}
 
-			undo_redo->add_do_method(this, "_refresh_menu_icons", Variant());
-			undo_redo->add_undo_method(this, "_refresh_menu_icons", Variant());
+			undo_redo->add_do_method(this, "_refresh_menu_icons");
+			undo_redo->add_undo_method(this, "_refresh_menu_icons");
 			undo_redo->commit_action();
 		} break;
 		case MENU_GROUP_SELECTED: {
@@ -5008,7 +5011,7 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 
 			for (List<Node *>::Element *E = selection.front(); E; E = E->next()) {
 				Node3D *spatial = Object::cast_to<Node3D>(E->get());
-				if (!spatial || !spatial->is_visible_in_tree()) {
+				if (!spatial || !spatial->is_inside_tree()) {
 					continue;
 				}
 
@@ -5022,8 +5025,8 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 				undo_redo->add_undo_method(this, "emit_signal", "item_group_status_changed");
 			}
 
-			undo_redo->add_do_method(this, "_refresh_menu_icons", Variant());
-			undo_redo->add_undo_method(this, "_refresh_menu_icons", Variant());
+			undo_redo->add_do_method(this, "_refresh_menu_icons");
+			undo_redo->add_undo_method(this, "_refresh_menu_icons");
 			undo_redo->commit_action();
 		} break;
 		case MENU_UNGROUP_SELECTED: {
@@ -5032,7 +5035,7 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 
 			for (List<Node *>::Element *E = selection.front(); E; E = E->next()) {
 				Node3D *spatial = Object::cast_to<Node3D>(E->get());
-				if (!spatial || !spatial->is_visible_in_tree()) {
+				if (!spatial || !spatial->is_inside_tree()) {
 					continue;
 				}
 
@@ -5046,8 +5049,8 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 				undo_redo->add_undo_method(this, "emit_signal", "item_group_status_changed");
 			}
 
-			undo_redo->add_do_method(this, "_refresh_menu_icons", Variant());
-			undo_redo->add_undo_method(this, "_refresh_menu_icons", Variant());
+			undo_redo->add_do_method(this, "_refresh_menu_icons");
+			undo_redo->add_undo_method(this, "_refresh_menu_icons");
 			undo_redo->commit_action();
 		} break;
 	}
@@ -5989,6 +5992,7 @@ void Node3DEditor::_bind_methods() {
 	ClassDB::bind_method("_unhandled_key_input", &Node3DEditor::_unhandled_key_input);
 	ClassDB::bind_method("_get_editor_data", &Node3DEditor::_get_editor_data);
 	ClassDB::bind_method("_request_gizmo", &Node3DEditor::_request_gizmo);
+	ClassDB::bind_method("_refresh_menu_icons", &Node3DEditor::_refresh_menu_icons);
 
 	ADD_SIGNAL(MethodInfo("transform_key_request"));
 	ADD_SIGNAL(MethodInfo("item_lock_status_changed"));
@@ -6048,7 +6052,7 @@ Node3DEditor::Node3DEditor(EditorNode *p_editor) {
 	button_binds.resize(1);
 	String sct;
 
-	tool_button[TOOL_MODE_SELECT] = memnew(ToolButton);
+	tool_button[TOOL_MODE_SELECT] = memnew(Button);
 	hbc_menu->add_child(tool_button[TOOL_MODE_SELECT]);
 	tool_button[TOOL_MODE_SELECT]->set_toggle_mode(true);
 	tool_button[TOOL_MODE_SELECT]->set_flat(true);
@@ -6060,7 +6064,7 @@ Node3DEditor::Node3DEditor(EditorNode *p_editor) {
 
 	hbc_menu->add_child(memnew(VSeparator));
 
-	tool_button[TOOL_MODE_MOVE] = memnew(ToolButton);
+	tool_button[TOOL_MODE_MOVE] = memnew(Button);
 	hbc_menu->add_child(tool_button[TOOL_MODE_MOVE]);
 	tool_button[TOOL_MODE_MOVE]->set_toggle_mode(true);
 	tool_button[TOOL_MODE_MOVE]->set_flat(true);
@@ -6068,7 +6072,7 @@ Node3DEditor::Node3DEditor(EditorNode *p_editor) {
 	tool_button[TOOL_MODE_MOVE]->connect("pressed", callable_mp(this, &Node3DEditor::_menu_item_pressed), button_binds);
 	tool_button[TOOL_MODE_MOVE]->set_shortcut(ED_SHORTCUT("spatial_editor/tool_move", TTR("Move Mode"), KEY_W));
 
-	tool_button[TOOL_MODE_ROTATE] = memnew(ToolButton);
+	tool_button[TOOL_MODE_ROTATE] = memnew(Button);
 	hbc_menu->add_child(tool_button[TOOL_MODE_ROTATE]);
 	tool_button[TOOL_MODE_ROTATE]->set_toggle_mode(true);
 	tool_button[TOOL_MODE_ROTATE]->set_flat(true);
@@ -6076,7 +6080,7 @@ Node3DEditor::Node3DEditor(EditorNode *p_editor) {
 	tool_button[TOOL_MODE_ROTATE]->connect("pressed", callable_mp(this, &Node3DEditor::_menu_item_pressed), button_binds);
 	tool_button[TOOL_MODE_ROTATE]->set_shortcut(ED_SHORTCUT("spatial_editor/tool_rotate", TTR("Rotate Mode"), KEY_E));
 
-	tool_button[TOOL_MODE_SCALE] = memnew(ToolButton);
+	tool_button[TOOL_MODE_SCALE] = memnew(Button);
 	hbc_menu->add_child(tool_button[TOOL_MODE_SCALE]);
 	tool_button[TOOL_MODE_SCALE]->set_toggle_mode(true);
 	tool_button[TOOL_MODE_SCALE]->set_flat(true);
@@ -6086,7 +6090,7 @@ Node3DEditor::Node3DEditor(EditorNode *p_editor) {
 
 	hbc_menu->add_child(memnew(VSeparator));
 
-	tool_button[TOOL_MODE_LIST_SELECT] = memnew(ToolButton);
+	tool_button[TOOL_MODE_LIST_SELECT] = memnew(Button);
 	hbc_menu->add_child(tool_button[TOOL_MODE_LIST_SELECT]);
 	tool_button[TOOL_MODE_LIST_SELECT]->set_toggle_mode(true);
 	tool_button[TOOL_MODE_LIST_SELECT]->set_flat(true);
@@ -6094,33 +6098,37 @@ Node3DEditor::Node3DEditor(EditorNode *p_editor) {
 	tool_button[TOOL_MODE_LIST_SELECT]->connect("pressed", callable_mp(this, &Node3DEditor::_menu_item_pressed), button_binds);
 	tool_button[TOOL_MODE_LIST_SELECT]->set_tooltip(TTR("Show a list of all objects at the position clicked\n(same as Alt+RMB in select mode)."));
 
-	tool_button[TOOL_LOCK_SELECTED] = memnew(ToolButton);
+	tool_button[TOOL_LOCK_SELECTED] = memnew(Button);
 	hbc_menu->add_child(tool_button[TOOL_LOCK_SELECTED]);
+	tool_button[TOOL_LOCK_SELECTED]->set_flat(true);
 	button_binds.write[0] = MENU_LOCK_SELECTED;
 	tool_button[TOOL_LOCK_SELECTED]->connect("pressed", callable_mp(this, &Node3DEditor::_menu_item_pressed), button_binds);
 	tool_button[TOOL_LOCK_SELECTED]->set_tooltip(TTR("Lock the selected object in place (can't be moved)."));
 
-	tool_button[TOOL_UNLOCK_SELECTED] = memnew(ToolButton);
+	tool_button[TOOL_UNLOCK_SELECTED] = memnew(Button);
 	hbc_menu->add_child(tool_button[TOOL_UNLOCK_SELECTED]);
+	tool_button[TOOL_UNLOCK_SELECTED]->set_flat(true);
 	button_binds.write[0] = MENU_UNLOCK_SELECTED;
 	tool_button[TOOL_UNLOCK_SELECTED]->connect("pressed", callable_mp(this, &Node3DEditor::_menu_item_pressed), button_binds);
 	tool_button[TOOL_UNLOCK_SELECTED]->set_tooltip(TTR("Unlock the selected object (can be moved)."));
 
-	tool_button[TOOL_GROUP_SELECTED] = memnew(ToolButton);
+	tool_button[TOOL_GROUP_SELECTED] = memnew(Button);
 	hbc_menu->add_child(tool_button[TOOL_GROUP_SELECTED]);
+	tool_button[TOOL_GROUP_SELECTED]->set_flat(true);
 	button_binds.write[0] = MENU_GROUP_SELECTED;
 	tool_button[TOOL_GROUP_SELECTED]->connect("pressed", callable_mp(this, &Node3DEditor::_menu_item_pressed), button_binds);
 	tool_button[TOOL_GROUP_SELECTED]->set_tooltip(TTR("Makes sure the object's children are not selectable."));
 
-	tool_button[TOOL_UNGROUP_SELECTED] = memnew(ToolButton);
+	tool_button[TOOL_UNGROUP_SELECTED] = memnew(Button);
 	hbc_menu->add_child(tool_button[TOOL_UNGROUP_SELECTED]);
+	tool_button[TOOL_UNGROUP_SELECTED]->set_flat(true);
 	button_binds.write[0] = MENU_UNGROUP_SELECTED;
 	tool_button[TOOL_UNGROUP_SELECTED]->connect("pressed", callable_mp(this, &Node3DEditor::_menu_item_pressed), button_binds);
 	tool_button[TOOL_UNGROUP_SELECTED]->set_tooltip(TTR("Restores the object's children's ability to be selected."));
 
 	hbc_menu->add_child(memnew(VSeparator));
 
-	tool_option_button[TOOL_OPT_LOCAL_COORDS] = memnew(ToolButton);
+	tool_option_button[TOOL_OPT_LOCAL_COORDS] = memnew(Button);
 	hbc_menu->add_child(tool_option_button[TOOL_OPT_LOCAL_COORDS]);
 	tool_option_button[TOOL_OPT_LOCAL_COORDS]->set_toggle_mode(true);
 	tool_option_button[TOOL_OPT_LOCAL_COORDS]->set_flat(true);
@@ -6128,7 +6136,7 @@ Node3DEditor::Node3DEditor(EditorNode *p_editor) {
 	tool_option_button[TOOL_OPT_LOCAL_COORDS]->connect("toggled", callable_mp(this, &Node3DEditor::_menu_item_toggled), button_binds);
 	tool_option_button[TOOL_OPT_LOCAL_COORDS]->set_shortcut(ED_SHORTCUT("spatial_editor/local_coords", TTR("Use Local Space"), KEY_T));
 
-	tool_option_button[TOOL_OPT_USE_SNAP] = memnew(ToolButton);
+	tool_option_button[TOOL_OPT_USE_SNAP] = memnew(Button);
 	hbc_menu->add_child(tool_option_button[TOOL_OPT_USE_SNAP]);
 	tool_option_button[TOOL_OPT_USE_SNAP]->set_toggle_mode(true);
 	tool_option_button[TOOL_OPT_USE_SNAP]->set_flat(true);
@@ -6138,7 +6146,7 @@ Node3DEditor::Node3DEditor(EditorNode *p_editor) {
 
 	hbc_menu->add_child(memnew(VSeparator));
 
-	tool_option_button[TOOL_OPT_OVERRIDE_CAMERA] = memnew(ToolButton);
+	tool_option_button[TOOL_OPT_OVERRIDE_CAMERA] = memnew(Button);
 	hbc_menu->add_child(tool_option_button[TOOL_OPT_OVERRIDE_CAMERA]);
 	tool_option_button[TOOL_OPT_OVERRIDE_CAMERA]->set_toggle_mode(true);
 	tool_option_button[TOOL_OPT_OVERRIDE_CAMERA]->set_flat(true);
