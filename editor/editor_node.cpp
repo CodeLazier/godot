@@ -85,6 +85,7 @@
 #include "editor/editor_settings.h"
 #include "editor/editor_spin_slider.h"
 #include "editor/editor_themes.h"
+#include "editor/editor_translation_parser.h"
 #include "editor/export_template_manager.h"
 #include "editor/filesystem_dock.h"
 #include "editor/import/editor_import_collada.h"
@@ -103,7 +104,6 @@
 #include "editor/import_dock.h"
 #include "editor/multi_node_edit.h"
 #include "editor/node_dock.h"
-#include "editor/pane_drag.h"
 #include "editor/plugin_config_dialog.h"
 #include "editor/plugins/animation_blend_space_1d_editor.h"
 #include "editor/plugins/animation_blend_space_2d_editor.h"
@@ -138,6 +138,7 @@
 #include "editor/plugins/multimesh_editor_plugin.h"
 #include "editor/plugins/navigation_polygon_editor_plugin.h"
 #include "editor/plugins/node_3d_editor_plugin.h"
+#include "editor/plugins/packed_scene_translation_parser_plugin.h"
 #include "editor/plugins/path_2d_editor_plugin.h"
 #include "editor/plugins/path_3d_editor_plugin.h"
 #include "editor/plugins/physical_bone_3d_editor_plugin.h"
@@ -178,12 +179,127 @@
 
 EditorNode *EditorNode::singleton = nullptr;
 
+void EditorNode::disambiguate_filenames(const Vector<String> p_full_paths, Vector<String> &r_filenames) {
+	// Keep track of a list of "index sets," i.e. sets of indices
+	// within disambiguated_scene_names which contain the same name.
+	Vector<Set<int>> index_sets;
+	Map<String, int> scene_name_to_set_index;
+	for (int i = 0; i < r_filenames.size(); i++) {
+		String scene_name = r_filenames[i];
+		if (!scene_name_to_set_index.has(scene_name)) {
+			index_sets.append(Set<int>());
+			scene_name_to_set_index.insert(r_filenames[i], index_sets.size() - 1);
+		}
+		index_sets.write[scene_name_to_set_index[scene_name]].insert(i);
+	}
+
+	// For each index set with a size > 1, we need to disambiguate
+	for (int i = 0; i < index_sets.size(); i++) {
+		Set<int> iset = index_sets[i];
+		while (iset.size() > 1) {
+			// Append the parent folder to each scene name
+			for (Set<int>::Element *E = iset.front(); E; E = E->next()) {
+				int set_idx = E->get();
+				String scene_name = r_filenames[set_idx];
+				String full_path = p_full_paths[set_idx];
+
+				// Get rid of file extensions and res:// prefixes
+				if (scene_name.rfind(".") >= 0) {
+					scene_name = scene_name.substr(0, scene_name.rfind("."));
+				}
+				if (full_path.begins_with("res://")) {
+					full_path = full_path.substr(6);
+				}
+				if (full_path.rfind(".") >= 0) {
+					full_path = full_path.substr(0, full_path.rfind("."));
+				}
+
+				int scene_name_size = scene_name.size();
+				int full_path_size = full_path.size();
+				int difference = full_path_size - scene_name_size;
+
+				// Find just the parent folder of the current path and append it.
+				// If the current name is foo.tscn, and the full path is /some/folder/foo.tscn
+				// then slash_idx is the second '/', so that we select just "folder", and
+				// append that to yield "folder/foo.tscn".
+				if (difference > 0) {
+					String parent = full_path.substr(0, difference);
+					int slash_idx = parent.rfind("/");
+					slash_idx = parent.rfind("/", slash_idx - 1);
+					parent = slash_idx >= 0 ? parent.substr(slash_idx + 1) : parent;
+					r_filenames.write[set_idx] = parent + r_filenames[set_idx];
+				}
+			}
+
+			// Loop back through scene names and remove non-ambiguous names
+			bool can_proceed = false;
+			Set<int>::Element *E = iset.front();
+			while (E) {
+				String scene_name = r_filenames[E->get()];
+				bool duplicate_found = false;
+				for (Set<int>::Element *F = iset.front(); F; F = F->next()) {
+					if (E->get() == F->get()) {
+						continue;
+					}
+					String other_scene_name = r_filenames[F->get()];
+					if (other_scene_name == scene_name) {
+						duplicate_found = true;
+						break;
+					}
+				}
+
+				Set<int>::Element *to_erase = duplicate_found ? nullptr : E;
+
+				// We need to check that we could actually append anymore names
+				// if we wanted to for disambiguation. If we can't, then we have
+				// to abort even with ambiguous names. We clean the full path
+				// and the scene name first to remove extensions so that this
+				// comparison actually works.
+				String path = p_full_paths[E->get()];
+				if (path.begins_with("res://")) {
+					path = path.substr(6);
+				}
+				if (path.rfind(".") >= 0) {
+					path = path.substr(0, path.rfind("."));
+				}
+				if (scene_name.rfind(".") >= 0) {
+					scene_name = scene_name.substr(0, scene_name.rfind("."));
+				}
+
+				// We can proceed iff the full path is longer than the scene name,
+				// meaning that there is at least one more parent folder we can
+				// tack onto the name.
+				can_proceed = can_proceed || (path.size() - scene_name.size()) >= 1;
+
+				E = E->next();
+				if (to_erase) {
+					iset.erase(to_erase);
+				}
+			}
+
+			if (!can_proceed) {
+				break;
+			}
+		}
+	}
+}
+
 void EditorNode::_update_scene_tabs() {
 	bool show_rb = EditorSettings::get_singleton()->get("interface/scene_tabs/show_script_button");
 
 	if (DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_GLOBAL_MENU)) {
 		DisplayServer::get_singleton()->global_menu_clear("_dock");
 	}
+
+	// Get all scene names, which may be ambiguous
+	Vector<String> disambiguated_scene_names;
+	Vector<String> full_path_names;
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		disambiguated_scene_names.append(editor_data.get_scene_title(i));
+		full_path_names.append(editor_data.get_scene_path(i));
+	}
+
+	disambiguate_filenames(full_path_names, disambiguated_scene_names);
 
 	scene_tabs->clear_tabs();
 	Ref<Texture2D> script_icon = gui_base->get_theme_icon("Script", "EditorIcons");
@@ -196,7 +312,7 @@ void EditorNode::_update_scene_tabs() {
 
 		int current = editor_data.get_edited_scene();
 		bool unsaved = (i == current) ? saved_version != editor_data.get_undo_redo().get_version() : editor_data.get_scene_version(i) != 0;
-		scene_tabs->add_tab(editor_data.get_scene_title(i) + (unsaved ? "(*)" : ""), icon);
+		scene_tabs->add_tab(disambiguated_scene_names[i] + (unsaved ? "(*)" : ""), icon);
 
 		if (DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_GLOBAL_MENU)) {
 			DisplayServer::get_singleton()->global_menu_add_item("_dock", editor_data.get_scene_title(i) + (unsaved ? "(*)" : ""), callable_mp(this, &EditorNode::_global_menu_scene), i);
@@ -360,7 +476,7 @@ void EditorNode::_notification(int p_what) {
 				bool dof_jitter = GLOBAL_GET("rendering/quality/depth_of_field/depth_of_field_use_jitter");
 				RS::get_singleton()->camera_effects_set_dof_blur_quality(dof_quality, dof_jitter);
 				RS::get_singleton()->environment_set_ssao_quality(RS::EnvironmentSSAOQuality(int(GLOBAL_GET("rendering/quality/ssao/quality"))), GLOBAL_GET("rendering/quality/ssao/half_size"));
-				RS::get_singleton()->screen_space_roughness_limiter_set_active(GLOBAL_GET("rendering/quality/screen_filters/screen_space_roughness_limiter_enable"), GLOBAL_GET("rendering/quality/screen_filters/screen_space_roughness_limiter_amount"), GLOBAL_GET("rendering/quality/screen_filters/screen_space_roughness_limiter_limit"));
+				RS::get_singleton()->screen_space_roughness_limiter_set_active(GLOBAL_GET("rendering/quality/screen_filters/screen_space_roughness_limiter_enabled"), GLOBAL_GET("rendering/quality/screen_filters/screen_space_roughness_limiter_amount"), GLOBAL_GET("rendering/quality/screen_filters/screen_space_roughness_limiter_limit"));
 				bool glow_bicubic = int(GLOBAL_GET("rendering/quality/glow/upscale_mode")) > 0;
 				RS::get_singleton()->environment_glow_set_use_bicubic_upscale(glow_bicubic);
 				RS::EnvironmentSSRRoughnessQuality ssr_roughness_quality = RS::EnvironmentSSRRoughnessQuality(int(GLOBAL_GET("rendering/quality/screen_space_reflection/roughness_quality")));
@@ -435,14 +551,14 @@ void EditorNode::_notification(int p_what) {
 			/* DO NOT LOAD SCENES HERE, WAIT FOR FILE SCANNING AND REIMPORT TO COMPLETE */
 		} break;
 
-		case NOTIFICATION_WM_FOCUS_IN: {
+		case NOTIFICATION_APPLICATION_FOCUS_IN: {
 			// Restore the original FPS cap after focusing back on the editor
 			OS::get_singleton()->set_low_processor_usage_mode_sleep_usec(int(EDITOR_GET("interface/editor/low_processor_mode_sleep_usec")));
 
 			EditorFileSystem::get_singleton()->scan_changes();
 		} break;
 
-		case NOTIFICATION_WM_FOCUS_OUT: {
+		case NOTIFICATION_APPLICATION_FOCUS_OUT: {
 			// Set a low FPS cap to decrease CPU/GPU usage while the editor is unfocused
 			OS::get_singleton()->set_low_processor_usage_mode_sleep_usec(int(EDITOR_GET("interface/editor/unfocused_low_processor_mode_sleep_usec")));
 		} break;
@@ -3411,10 +3527,14 @@ void EditorNode::_update_recent_scenes() {
 void EditorNode::_quick_opened() {
 	Vector<String> files = quick_open->get_selected_files();
 
+	bool open_scene_dialog = quick_open->get_base_type() == "PackedScene";
 	for (int i = 0; i < files.size(); i++) {
 		String res_path = files[i];
 
-		if (quick_open->get_base_type() == "PackedScene") {
+		List<String> scene_extensions;
+		ResourceLoader::get_recognized_extensions_for_type("PackedScene", &scene_extensions);
+
+		if (open_scene_dialog || scene_extensions.find(files[i].get_extension())) {
 			open_request(res_path);
 		} else {
 			load_resource(res_path);
@@ -3470,6 +3590,7 @@ void EditorNode::register_editor_types() {
 	ResourceSaver::set_timestamp_on_save(true);
 
 	ClassDB::register_class<EditorPlugin>();
+	ClassDB::register_class<EditorTranslationParserPlugin>();
 	ClassDB::register_class<EditorImportPlugin>();
 	ClassDB::register_class<EditorScript>();
 	ClassDB::register_class<EditorSelection>();
@@ -3661,8 +3782,6 @@ Ref<Texture2D> EditorNode::get_class_icon(const String &p_class, const String &p
 		if (icon.is_null()) {
 			icon = gui_base->get_theme_icon(ScriptServer::get_global_class_base(name), "EditorIcons");
 		}
-
-		return icon;
 	}
 
 	const Map<String, Vector<EditorData::CustomType>> &p_map = EditorNode::get_editor_data().get_custom_types();
@@ -5401,10 +5520,10 @@ EditorNode::EditorNode() {
 		switch (display_scale) {
 			case 0: {
 				// Try applying a suitable display scale automatically
-				const int screen = DisplayServer::get_singleton()->window_get_current_screen();
 #ifdef OSX_ENABLED
-				editor_set_scale(DisplayServer::get_singleton()->screen_get_scale(screen));
+				editor_set_scale(DisplayServer::get_singleton()->screen_get_max_scale());
 #else
+				const int screen = DisplayServer::get_singleton()->window_get_current_screen();
 				editor_set_scale(DisplayServer::get_singleton()->screen_get_dpi(screen) >= 192 && DisplayServer::get_singleton()->screen_get_size(screen).x > 2000 ? 2.0 : 1.0);
 #endif
 			} break;
@@ -6539,6 +6658,10 @@ EditorNode::EditorNode() {
 	export_text_to_binary_plugin.instance();
 
 	EditorExport::get_singleton()->add_export_plugin(export_text_to_binary_plugin);
+
+	Ref<PackedSceneEditorTranslationParserPlugin> packed_scene_translation_parser_plugin;
+	packed_scene_translation_parser_plugin.instance();
+	EditorTranslationParser::get_singleton()->add_parser(packed_scene_translation_parser_plugin, EditorTranslationParser::STANDARD);
 
 	_edit_current();
 	current = nullptr;

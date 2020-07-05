@@ -86,6 +86,14 @@ public:
 		uint32_t unicode;
 	};
 
+	struct WarpEvent {
+		NSTimeInterval timestamp;
+		NSPoint delta;
+	};
+
+	List<WarpEvent> warp_events;
+	NSTimeInterval last_warp = 0;
+
 	Vector<KeyEvent> key_event_buffer;
 	int key_event_pos;
 
@@ -124,6 +132,7 @@ public:
 		bool on_top = false;
 		bool borderless = false;
 		bool resize_disabled = false;
+		bool no_focus = false;
 	};
 
 	Point2i im_selection;
@@ -142,7 +151,6 @@ public:
 
 	void _set_window_per_pixel_transparency_enabled(bool p_enabled, WindowID p_window);
 
-	float _display_scale(id screen) const;
 	Point2i _get_screens_origin() const;
 	Point2i _get_native_screen_position(int p_screen) const;
 
@@ -216,11 +224,12 @@ public:
 	virtual Size2i screen_get_size(int p_screen = SCREEN_OF_MAIN_WINDOW) const;
 	virtual int screen_get_dpi(int p_screen = SCREEN_OF_MAIN_WINDOW) const;
 	virtual float screen_get_scale(int p_screen = SCREEN_OF_MAIN_WINDOW) const;
+	virtual float screen_get_max_scale() const;
 	virtual Rect2i screen_get_usable_rect(int p_screen = SCREEN_OF_MAIN_WINDOW) const;
 
 	virtual Vector<int> get_window_list() const;
 
-	virtual WindowID create_sub_window(WindowMode p_mode, uint32_t p_flags, const Rect2i & = Rect2i());
+	virtual WindowID create_sub_window(WindowMode p_mode, uint32_t p_flags, const Rect2i &p_rect = Rect2i());
 	virtual void delete_sub_window(WindowID p_id);
 
 	virtual void window_set_rect_changed_callback(const Callable &p_callable, WindowID p_window = MAIN_WINDOW_ID);
