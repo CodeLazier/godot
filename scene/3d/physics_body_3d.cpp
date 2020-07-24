@@ -358,6 +358,7 @@ void RigidBody3D::_direct_state_changed(Object *p_state) {
 	set_global_transform(state->get_transform());
 	linear_velocity = state->get_linear_velocity();
 	angular_velocity = state->get_angular_velocity();
+	inverse_inertia_tensor = state->get_inverse_inertia_tensor();
 	if (sleeping != state->is_sleeping()) {
 		sleeping = state->is_sleeping();
 		emit_signal(SceneStringNames::get_singleton()->sleeping_state_changed);
@@ -594,6 +595,10 @@ Vector3 RigidBody3D::get_angular_velocity() const {
 	return angular_velocity;
 }
 
+Basis RigidBody3D::get_inverse_inertia_tensor() {
+	return inverse_inertia_tensor;
+}
+
 void RigidBody3D::set_use_custom_integrator(bool p_enable) {
 	if (custom_integrator == p_enable) {
 		return;
@@ -759,6 +764,8 @@ void RigidBody3D::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_angular_velocity", "angular_velocity"), &RigidBody3D::set_angular_velocity);
 	ClassDB::bind_method(D_METHOD("get_angular_velocity"), &RigidBody3D::get_angular_velocity);
+
+	ClassDB::bind_method(D_METHOD("get_inverse_inertia_tensor"), &RigidBody3D::get_inverse_inertia_tensor);
 
 	ClassDB::bind_method(D_METHOD("set_gravity_scale", "gravity_scale"), &RigidBody3D::set_gravity_scale);
 	ClassDB::bind_method(D_METHOD("get_gravity_scale"), &RigidBody3D::get_gravity_scale);
@@ -1241,12 +1248,12 @@ void KinematicBody3D::_direct_state_changed(Object *p_state) {
 
 KinematicBody3D::KinematicBody3D() :
 		PhysicsBody3D(PhysicsServer3D::BODY_MODE_KINEMATIC) {
-	margin = 0.001;
 	locked_axis = 0;
 	on_floor = false;
 	on_ceiling = false;
 	on_wall = false;
 
+	set_safe_margin(0.001);
 	PhysicsServer3D::get_singleton()->body_set_force_integration_callback(get_rid(), this, "_direct_state_changed");
 }
 

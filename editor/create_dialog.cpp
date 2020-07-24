@@ -425,7 +425,6 @@ Object *CreateDialog::instance_selected() {
 			if (n) {
 				n->set_name(custom);
 			}
-			obj = n;
 		} else {
 			obj = EditorNode::get_editor_data().instance_custom_type(selected->get_text(0), custom);
 		}
@@ -675,7 +674,7 @@ CreateDialog::CreateDialog() {
 	favorites->connect("item_activated", callable_mp(this, &CreateDialog::_favorite_activated));
 	favorites->add_theme_constant_override("draw_guides", 1);
 #ifndef _MSC_VER
-#warning cant forward drag data to a non control, must be fixed
+#warning cannot forward drag data to a non control, must be fixed
 #endif
 	//favorites->set_drag_forwarding(this);
 	fav_vb->add_margin_child(TTR("Favorites:"), favorites, true);

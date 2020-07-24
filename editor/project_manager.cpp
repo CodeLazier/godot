@@ -365,13 +365,13 @@ private:
 		} else {
 			fdialog->set_file_mode(FileDialog::FILE_MODE_OPEN_DIR);
 		}
-		fdialog->popup_centered_ratio();
+		fdialog->popup_file_dialog();
 	}
 
 	void _browse_install_path() {
 		fdialog_install->set_current_dir(install_path->get_text());
 		fdialog_install->set_file_mode(FileDialog::FILE_MODE_OPEN_DIR);
-		fdialog_install->popup_centered_ratio();
+		fdialog_install->popup_file_dialog();
 	}
 
 	void _create_folder() {
@@ -415,7 +415,7 @@ private:
 		}
 	}
 
-	void ok_pressed() {
+	void ok_pressed() override {
 		String dir = project_path->get_text();
 
 		if (mode == MODE_RENAME) {
@@ -603,7 +603,7 @@ private:
 		}
 	}
 
-	void cancel_pressed() {
+	void cancel_pressed() override {
 		_remove_created_folder();
 
 		project_path->clear();
@@ -2004,6 +2004,14 @@ void ProjectManager::_open_selected_projects() {
 
 		args.push_back("--editor");
 
+		if (OS::get_singleton()->is_stdout_debug_enabled()) {
+			args.push_back("--debug");
+		}
+
+		if (OS::get_singleton()->is_stdout_verbose()) {
+			args.push_back("--verbose");
+		}
+
 		if (OS::get_singleton()->is_disable_crash_handler()) {
 			args.push_back("--disable-crash-handler");
 		}
@@ -2151,7 +2159,7 @@ void ProjectManager::_scan_begin(const String &p_base) {
 }
 
 void ProjectManager::_scan_projects() {
-	scan_dir->popup_centered_ratio();
+	scan_dir->popup_file_dialog();
 }
 
 void ProjectManager::_new_project() {
