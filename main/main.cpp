@@ -836,6 +836,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 
 		} else if (I->get() == "-d" || I->get() == "--debug") {
 			debug_uri = "local://";
+			OS::get_singleton()->_debug_stdout = true;
 #if defined(DEBUG_ENABLED) && !defined(SERVER_ENABLED)
 		} else if (I->get() == "--debug-collisions") {
 			debug_collisions = true;
@@ -953,16 +954,6 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	}
 #endif
 
-	GLOBAL_DEF("logging/file_logging/enable_file_logging", false);
-	GLOBAL_DEF("logging/file_logging/log_path", "user://logs/log.txt");
-	GLOBAL_DEF("logging/file_logging/max_log_files", 10);
-	ProjectSettings::get_singleton()->set_custom_property_info("logging/file_logging/max_log_files", PropertyInfo(Variant::INT, "logging/file_logging/max_log_files", PROPERTY_HINT_RANGE, "0,20,1,or_greater")); //no negative numbers
-	if (FileAccess::get_create_func(FileAccess::ACCESS_USERDATA) && GLOBAL_GET("logging/file_logging/enable_file_logging")) {
-		String base_path = GLOBAL_GET("logging/file_logging/log_path");
-		int max_files = GLOBAL_GET("logging/file_logging/max_log_files");
-		OS::get_singleton()->add_logger(memnew(RotatedFileLogger(base_path, max_files)));
-	}
-
 #ifdef TOOLS_ENABLED
 	if (editor) {
 		Engine::get_singleton()->set_editor_hint(true);
@@ -978,6 +969,23 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		project_manager = main_args.size() == 0 && !found_project;
 	}
 #endif
+
+	GLOBAL_DEF("logging/file_logging/enable_file_logging", false);
+	// Only file logging by default on desktop platforms as logs can't be
+	// accessed easily on mobile/Web platforms (if at all).
+	// This also prevents logs from being created for the editor instance, as feature tags
+	// are disabled while in the editor (even if they should logically apply).
+	GLOBAL_DEF("logging/file_logging/enable_file_logging.pc", true);
+	GLOBAL_DEF("logging/file_logging/log_path", "user://logs/godot.log");
+	GLOBAL_DEF("logging/file_logging/max_log_files", 5);
+	ProjectSettings::get_singleton()->set_custom_property_info("logging/file_logging/max_log_files", PropertyInfo(Variant::INT, "logging/file_logging/max_log_files", PROPERTY_HINT_RANGE, "0,20,1,or_greater")); //no negative numbers
+	if (!project_manager && !editor && FileAccess::get_create_func(FileAccess::ACCESS_USERDATA) && GLOBAL_GET("logging/file_logging/enable_file_logging")) {
+		// Don't create logs for the project manager as they would be written to
+		// the current working directory, which is inconvenient.
+		String base_path = GLOBAL_GET("logging/file_logging/log_path");
+		int max_files = GLOBAL_GET("logging/file_logging/max_log_files");
+		OS::get_singleton()->add_logger(memnew(RotatedFileLogger(base_path, max_files)));
+	}
 
 	if (main_args.size() == 0 && String(GLOBAL_DEF("application/run/main_scene", "")) == "") {
 #ifdef TOOLS_ENABLED
@@ -1292,7 +1300,7 @@ Error Main::setup2(Thread::ID p_main_tid_override) {
 			}
 		}
 
-		if (!display_server) {
+		if (!display_server || err != OK) {
 			ERR_PRINT("Unable to create DisplayServer, all display drivers failed.");
 			return err;
 		}
@@ -1792,46 +1800,26 @@ bool Main::start() {
 		if (!project_manager && !editor) { // game
 			if (game_path != "" || script != "") {
 				//autoload
-				List<PropertyInfo> props;
-				ProjectSettings::get_singleton()->get_property_list(&props);
+				Map<StringName, ProjectSettings::AutoloadInfo> autoloads = ProjectSettings::get_singleton()->get_autoload_list();
 
 				//first pass, add the constants so they exist before any script is loaded
-				for (List<PropertyInfo>::Element *E = props.front(); E; E = E->next()) {
-					String s = E->get().name;
-					if (!s.begins_with("autoload/")) {
-						continue;
-					}
-					String name = s.get_slicec('/', 1);
-					String path = ProjectSettings::get_singleton()->get(s);
-					bool global_var = false;
-					if (path.begins_with("*")) {
-						global_var = true;
-					}
+				for (Map<StringName, ProjectSettings::AutoloadInfo>::Element *E = autoloads.front(); E; E = E->next()) {
+					const ProjectSettings::AutoloadInfo &info = E->get();
 
-					if (global_var) {
+					if (info.is_singleton) {
 						for (int i = 0; i < ScriptServer::get_language_count(); i++) {
-							ScriptServer::get_language(i)->add_global_constant(name, Variant());
+							ScriptServer::get_language(i)->add_global_constant(info.name, Variant());
 						}
 					}
 				}
 
 				//second pass, load into global constants
 				List<Node *> to_add;
-				for (List<PropertyInfo>::Element *E = props.front(); E; E = E->next()) {
-					String s = E->get().name;
-					if (!s.begins_with("autoload/")) {
-						continue;
-					}
-					String name = s.get_slicec('/', 1);
-					String path = ProjectSettings::get_singleton()->get(s);
-					bool global_var = false;
-					if (path.begins_with("*")) {
-						global_var = true;
-						path = path.substr(1, path.length() - 1);
-					}
+				for (Map<StringName, ProjectSettings::AutoloadInfo>::Element *E = autoloads.front(); E; E = E->next()) {
+					const ProjectSettings::AutoloadInfo &info = E->get();
 
-					RES res = ResourceLoader::load(path);
-					ERR_CONTINUE_MSG(res.is_null(), "Can't autoload: " + path);
+					RES res = ResourceLoader::load(info.path);
+					ERR_CONTINUE_MSG(res.is_null(), "Can't autoload: " + info.path);
 					Node *n = nullptr;
 					if (res->is_class("PackedScene")) {
 						Ref<PackedScene> ps = res;
@@ -1840,7 +1828,7 @@ bool Main::start() {
 						Ref<Script> script_res = res;
 						StringName ibt = script_res->get_instance_base_type();
 						bool valid_type = ClassDB::is_parent_class(ibt, "Node");
-						ERR_CONTINUE_MSG(!valid_type, "Script does not inherit a Node: " + path);
+						ERR_CONTINUE_MSG(!valid_type, "Script does not inherit a Node: " + info.path);
 
 						Object *obj = ClassDB::instance(ibt);
 
@@ -1850,15 +1838,15 @@ bool Main::start() {
 						n->set_script(script_res);
 					}
 
-					ERR_CONTINUE_MSG(!n, "Path in autoload not a node or script: " + path);
-					n->set_name(name);
+					ERR_CONTINUE_MSG(!n, "Path in autoload not a node or script: " + info.path);
+					n->set_name(info.name);
 
 					//defer so references are all valid on _ready()
 					to_add.push_back(n);
 
-					if (global_var) {
+					if (info.is_singleton) {
 						for (int i = 0; i < ScriptServer::get_language_count(); i++) {
-							ScriptServer::get_language(i)->add_global_constant(name, n);
+							ScriptServer::get_language(i)->add_global_constant(info.name, n);
 						}
 					}
 				}

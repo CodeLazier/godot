@@ -2372,7 +2372,7 @@ void DisplayServerX11::process_events() {
 			uint64_t delta = OS::get_singleton()->get_ticks_msec() - time_since_no_focus;
 
 			if (delta > 250) {
-				//X11 can go between windows and have no focus for a while, when creating them or something else. Use this as safety to avoid unnecesary focus in/outs.
+				//X11 can go between windows and have no focus for a while, when creating them or something else. Use this as safety to avoid unnecessary focus in/outs.
 				if (OS::get_singleton()->get_main_loop()) {
 					OS::get_singleton()->get_main_loop()->notification(MainLoop::NOTIFICATION_APPLICATION_FOCUS_OUT);
 				}
@@ -3185,7 +3185,13 @@ Vector<String> DisplayServerX11::get_rendering_drivers_func() {
 }
 
 DisplayServer *DisplayServerX11::create_func(const String &p_rendering_driver, WindowMode p_mode, uint32_t p_flags, const Vector2i &p_resolution, Error &r_error) {
-	return memnew(DisplayServerX11(p_rendering_driver, p_mode, p_flags, p_resolution, r_error));
+	DisplayServer *ds = memnew(DisplayServerX11(p_rendering_driver, p_mode, p_flags, p_resolution, r_error));
+	if (r_error != OK) {
+		ds->alert("Your video card driver does not support any of the supported Vulkan versions.\n"
+				  "Please update your drivers or if you have a very old or integrated GPU upgrade it.",
+				"Unable to initialize Video driver");
+	}
+	return ds;
 }
 
 DisplayServerX11::WindowID DisplayServerX11::_create_window(WindowMode p_mode, uint32_t p_flags, const Rect2i &p_rect) {
@@ -3326,7 +3332,7 @@ DisplayServerX11::WindowID DisplayServerX11::_create_window(WindowMode p_mode, u
 			if (make_utility) {
 				//this one seems to disable the fade animations for regular windows
 				//but has the drawback that will not get focus by default, so
-				//we need fo force it, unless no focus requested
+				//we need to force it, unless no focus requested
 
 				Atom type_atom = XInternAtom(x11_display, "_NET_WM_WINDOW_TYPE_UTILITY", False);
 				Atom wt_atom = XInternAtom(x11_display, "_NET_WM_WINDOW_TYPE", False);

@@ -994,8 +994,8 @@ void EditorNode::save_resource_as(const Ref<Resource> &p_resource, const String 
 		}
 		file->set_current_path(existing);
 	}
-	file->popup_centered_ratio();
 	file->set_title(TTR("Save Resource As..."));
+	file->popup_file_dialog();
 }
 
 void EditorNode::_menu_option(int p_option) {
@@ -1225,20 +1225,25 @@ void EditorNode::_save_scene_with_preview(String p_file, int p_idx) {
 
 		_find_node_types(editor_data.get_edited_scene_root(), c2d, c3d);
 
-		bool is2d;
-		if (c3d < c2d) {
-			is2d = true;
-		} else {
-			is2d = false;
-		}
 		save.step(TTR("Creating Thumbnail"), 1);
 		//current view?
 
 		Ref<Image> img;
-		if (is2d) {
+		// If neither 3D or 2D nodes are present, make a 1x1 black texture.
+		// We cannot fallback on the 2D editor, because it may not have been used yet,
+		// which would result in an invalid texture.
+		if (c3d == 0 && c2d == 0) {
+			img.instance();
+			img->create(1, 1, 0, Image::FORMAT_RGB8);
+		} else if (c3d < c2d) {
 			img = scene_root->get_texture()->get_data();
 		} else {
-			img = Node3DEditor::get_singleton()->get_editor_viewport(0)->get_viewport_node()->get_texture()->get_data();
+			// The 3D editor may be disabled as a feature, but scenes can still be opened.
+			// This check prevents the preview from regenerating in case those scenes are then saved.
+			Ref<EditorFeatureProfile> profile = feature_profile_manager->get_current_profile();
+			if (profile.is_valid() && !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_3D)) {
+				img = Node3DEditor::get_singleton()->get_editor_viewport(0)->get_viewport_node()->get_texture()->get_data();
+			}
 		}
 
 		if (img.is_valid()) {
@@ -2043,12 +2048,11 @@ void EditorNode::_run(bool p_current, const String &p_custom) {
 	play_custom_scene_button->set_pressed(false);
 	play_custom_scene_button->set_icon(gui_base->get_theme_icon("PlayCustom", "EditorIcons"));
 
-	String main_scene;
 	String run_filename;
 	String args;
 	bool skip_breakpoints;
 
-	if (p_current || (editor_data.get_edited_scene_root() && p_custom == editor_data.get_edited_scene_root()->get_filename())) {
+	if (p_current || (editor_data.get_edited_scene_root() && p_custom != String() && p_custom == editor_data.get_edited_scene_root()->get_filename())) {
 		Node *scene = editor_data.get_edited_scene_root();
 
 		if (!scene) {
@@ -2078,13 +2082,7 @@ void EditorNode::_run(bool p_current, const String &p_custom) {
 		if (unsaved_cache) {
 			Node *scene = editor_data.get_edited_scene_root();
 
-			if (scene) { //only autosave if there is a scene obviously
-
-				if (scene->get_filename() == "") {
-					show_accept(TTR("Current scene was never saved, please save it prior to running."), TTR("OK"));
-					return;
-				}
-
+			if (scene && scene->get_filename() != "") { // Only autosave if there is a scene and if it has a path.
 				_save_scene_with_preview(scene->get_filename());
 			}
 		}
@@ -2178,7 +2176,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 				file->set_current_path(scene->get_filename());
 			};
 			file->set_title(p_option == FILE_OPEN_SCENE ? TTR("Open Scene") : TTR("Open Base Scene"));
-			file->popup_centered_ratio();
+			file->popup_file_dialog();
 
 		} break;
 		case FILE_QUICK_OPEN: {
@@ -2314,7 +2312,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 				}
 				file->set_current_path(existing);
 			}
-			file->popup_centered_ratio();
+			file->popup_file_dialog();
 			file->set_title(TTR("Save Scene As..."));
 
 		} break;
@@ -2353,7 +2351,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 				file_export_lib->add_filter("*." + E->get());
 			}
 
-			file_export_lib->popup_centered_ratio();
+			file_export_lib->popup_file_dialog();
 			file_export_lib->set_title(TTR("Export Mesh Library"));
 
 		} break;
@@ -2372,7 +2370,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 				file_export_lib->add_filter("*." + E->get());
 			}
 
-			file_export_lib->popup_centered_ratio();
+			file_export_lib->popup_file_dialog();
 			file_export_lib->set_title(TTR("Export Tile Set"));
 
 		} break;
@@ -2464,8 +2462,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 
 		} break;
 		case RUN_PLAY: {
-			_menu_option_confirm(RUN_STOP, true);
-			_run(false);
+			run_play();
 
 		} break;
 		case RUN_PLAY_CUSTOM_SCENE: {
@@ -2476,8 +2473,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 				play_custom_scene_button->set_pressed(false);
 			} else {
 				String last_custom_scene = run_custom_filename;
-				_menu_option_confirm(RUN_STOP, true);
-				_run(false, last_custom_scene);
+				run_play_custom(last_custom_scene);
 			}
 
 		} break;
@@ -2517,9 +2513,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 		} break;
 
 		case RUN_PLAY_SCENE: {
-			_save_default_environment();
-			_menu_option_confirm(RUN_STOP, true);
-			_run(true);
+			run_play_current();
 
 		} break;
 		case RUN_SCENE_SETTINGS: {
@@ -2642,7 +2636,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 				file->set_current_path(scene->get_filename());
 			};
 			file->set_title(TTR("Pick a Main Scene"));
-			file->popup_centered_ratio();
+			file->popup_file_dialog();
 
 		} break;
 		case HELP_SEARCH: {
@@ -3604,6 +3598,8 @@ void EditorNode::register_editor_types() {
 	ClassDB::register_class<EditorFileSystemDirectory>();
 	ClassDB::register_class<EditorVCSInterface>();
 	ClassDB::register_virtual_class<ScriptEditor>();
+	ClassDB::register_virtual_class<ScriptEditorBase>();
+	ClassDB::register_class<EditorSyntaxHighlighter>();
 	ClassDB::register_virtual_class<EditorInterface>();
 	ClassDB::register_class<EditorExportPlugin>();
 	ClassDB::register_class<EditorResourceConversionPlugin>();
@@ -4524,8 +4520,33 @@ void EditorNode::run_play() {
 	_run(false);
 }
 
+void EditorNode::run_play_current() {
+	_save_default_environment();
+	_menu_option_confirm(RUN_STOP, true);
+	_run(true);
+}
+
+void EditorNode::run_play_custom(const String &p_custom) {
+	_menu_option_confirm(RUN_STOP, true);
+	_run(false, p_custom);
+}
+
 void EditorNode::run_stop() {
 	_menu_option_confirm(RUN_STOP, false);
+}
+
+bool EditorNode::is_run_playing() const {
+	EditorRun::Status status = editor_run.get_status();
+	return (status == EditorRun::STATUS_PLAY || status == EditorRun::STATUS_PAUSED);
+}
+
+String EditorNode::get_run_playing_scene() const {
+	String run_filename = editor_run.get_running_scene();
+	if (run_filename == "" && is_run_playing()) {
+		run_filename = GLOBAL_DEF("application/run/main_scene", ""); // Must be the main scene then.
+	}
+
+	return run_filename;
 }
 
 int EditorNode::get_current_tab() {
@@ -6294,7 +6315,7 @@ EditorNode::EditorNode() {
 	right_menu_hb->add_child(video_driver);
 
 #ifndef _MSC_VER
-#warning neeeds to be reimplemented
+#warning needs to be reimplemented
 #endif
 #if 0
 	String video_drivers = ProjectSettings::get_singleton()->get_custom_property_info()["rendering/quality/driver/driver_name"].hint_string;
@@ -6455,7 +6476,7 @@ EditorNode::EditorNode() {
 	confirmation->connect("confirmed", callable_mp(this, &EditorNode::_menu_confirm_current));
 
 	save_confirmation = memnew(ConfirmationDialog);
-	save_confirmation->add_button(TTR("Don't Save"), DisplayServer::get_singleton()->get_swap_ok_cancel(), "discard");
+	save_confirmation->add_button(TTR("Don't Save"), DisplayServer::get_singleton()->get_swap_cancel_ok(), "discard");
 	gui_base->add_child(save_confirmation);
 	save_confirmation->connect("confirmed", callable_mp(this, &EditorNode::_menu_confirm_current));
 	save_confirmation->connect("custom_action", callable_mp(this, &EditorNode::_discard_changes));
@@ -6674,7 +6695,7 @@ EditorNode::EditorNode() {
 
 	open_imported = memnew(ConfirmationDialog);
 	open_imported->get_ok()->set_text(TTR("Open Anyway"));
-	new_inherited_button = open_imported->add_button(TTR("New Inherited"), !DisplayServer::get_singleton()->get_swap_ok_cancel(), "inherit");
+	new_inherited_button = open_imported->add_button(TTR("New Inherited"), !DisplayServer::get_singleton()->get_swap_cancel_ok(), "inherit");
 	open_imported->connect("confirmed", callable_mp(this, &EditorNode::_open_imported));
 	open_imported->connect("custom_action", callable_mp(this, &EditorNode::_inherit_imported));
 	gui_base->add_child(open_imported);

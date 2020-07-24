@@ -645,9 +645,8 @@ void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
 			for (List<Node *>::Element *E = nodes.front(); E; E = E->next()) {
 				nodeset.insert(E->get());
 			}
-			reparent_dialog->popup_centered_ratio();
 			reparent_dialog->set_current(nodeset);
-
+			reparent_dialog->popup_centered_clamped(Size2(350, 700) * EDSCALE);
 		} break;
 		case TOOL_MAKE_ROOT: {
 			if (!profile_allow_editing) {
@@ -834,8 +833,8 @@ void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
 			}
 			new_scene_from_dialog->set_current_path(existing);
 
-			new_scene_from_dialog->popup_centered_ratio();
 			new_scene_from_dialog->set_title(TTR("Save New Scene As..."));
+			new_scene_from_dialog->popup_file_dialog();
 		} break;
 		case TOOL_COPY_NODE_PATH: {
 			List<Node *> selection = editor_selection->get_selected_node_list();
@@ -1218,7 +1217,6 @@ void SceneTreeDock::_node_selected() {
 	Node *node = scene_tree->get_selected();
 
 	if (!node) {
-		editor->push_item(nullptr);
 		return;
 	}
 
@@ -1903,11 +1901,10 @@ void SceneTreeDock::_selection_changed() {
 	if (selection_size > 1) {
 		//automatically turn on multi-edit
 		_tool_selected(TOOL_MULTI_EDIT);
-	} else if (selection_size == 1) {
-		editor->push_item(EditorNode::get_singleton()->get_editor_selection()->get_selected_node_list()[0]);
-	} else {
+	} else if (selection_size == 0) {
 		editor->push_item(nullptr);
 	}
+
 	_update_script_button();
 }
 
