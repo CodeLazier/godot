@@ -36,6 +36,7 @@
 #include "servers/display_server.h"
 
 #include "core/input/input.h"
+#include "core/local_vector.h"
 #include "drivers/alsa/audio_driver_alsa.h"
 #include "drivers/alsamidi/midi_driver_alsamidi.h"
 #include "drivers/pulseaudio/audio_driver_pulseaudio.h"
@@ -132,6 +133,9 @@ class DisplayServerX11 : public DisplayServer {
 
 		ObjectID instance_id;
 
+		bool menu_type = false;
+		bool no_focus = false;
+
 		//better to guess on the fly, given WM can change it
 		//WindowMode mode;
 		bool fullscreen = false; //OS can't exit from this mode
@@ -141,6 +145,8 @@ class DisplayServerX11 : public DisplayServer {
 		Vector2i last_position_before_fs;
 		bool focused = false;
 		bool minimized = false;
+
+		unsigned int focus_order = 0;
 	};
 
 	Map<WindowID, WindowData> windows;
@@ -197,7 +203,11 @@ class DisplayServerX11 : public DisplayServer {
 	MouseMode mouse_mode;
 	Point2i center;
 
-	void _handle_key_event(WindowID p_window, XKeyEvent *p_event, bool p_echo = false);
+	void _handle_key_event(WindowID p_window, XKeyEvent *p_event, LocalVector<XEvent> &p_events, uint32_t &p_event_index, bool p_echo = false);
+	void _handle_selection_request_event(XSelectionRequestEvent *p_event);
+
+	String _clipboard_get_impl(Atom p_source, Window x11_window, Atom target) const;
+	String _clipboard_get(Atom p_source, Window x11_window) const;
 
 	//bool minimized;
 	//bool window_has_focus;
@@ -235,6 +245,7 @@ class DisplayServerX11 : public DisplayServer {
 
 	void _update_real_mouse_position(const WindowData &wd);
 	bool _window_maximize_check(WindowID p_window, const char *p_atom_name) const;
+	void _update_size_hints(WindowID p_window);
 	void _set_wm_fullscreen(WindowID p_window, bool p_enabled);
 	void _set_wm_maximized(WindowID p_window, bool p_enabled);
 
@@ -245,6 +256,16 @@ class DisplayServerX11 : public DisplayServer {
 	void _send_window_event(const WindowData &wd, WindowEvent p_event);
 	static void _dispatch_input_events(const Ref<InputEvent> &p_event);
 	void _dispatch_input_event(const Ref<InputEvent> &p_event);
+
+	mutable Mutex events_mutex;
+	Thread *events_thread = nullptr;
+	bool events_thread_done = false;
+	LocalVector<XEvent> polled_events;
+	static void _poll_events_thread(void *ud);
+	void _poll_events();
+
+	static Bool _predicate_all_events(Display *display, XEvent *event, XPointer arg);
+	static Bool _predicate_clipboard_selection(Display *display, XEvent *event, XPointer arg);
 
 protected:
 	void _window_changed(XEvent *event);
@@ -276,6 +297,7 @@ public:
 	virtual Vector<DisplayServer::WindowID> get_window_list() const;
 
 	virtual WindowID create_sub_window(WindowMode p_mode, uint32_t p_flags, const Rect2i &p_rect = Rect2i());
+	virtual void show_window(WindowID p_id);
 	virtual void delete_sub_window(WindowID p_id);
 
 	virtual WindowID get_window_at_screen_position(const Point2i &p_position) const;
@@ -284,6 +306,8 @@ public:
 	virtual ObjectID window_get_attached_instance_id(WindowID p_window = MAIN_WINDOW_ID) const;
 
 	virtual void window_set_title(const String &p_title, WindowID p_window = MAIN_WINDOW_ID);
+	virtual void window_set_mouse_passthrough(const Vector<Vector2> &p_region, WindowID p_window = MAIN_WINDOW_ID);
+
 	virtual void window_set_rect_changed_callback(const Callable &p_callable, WindowID p_window = MAIN_WINDOW_ID);
 	virtual void window_set_window_event_callback(const Callable &p_callable, WindowID p_window = MAIN_WINDOW_ID);
 	virtual void window_set_input_event_callback(const Callable &p_callable, WindowID p_window = MAIN_WINDOW_ID);

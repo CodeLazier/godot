@@ -237,7 +237,7 @@ void RigidBodyBullet::KinematicUtilities::copyAllOwnerShapes() {
 			case PhysicsServer3D::SHAPE_CYLINDER:
 			case PhysicsServer3D::SHAPE_CONVEX_POLYGON:
 			case PhysicsServer3D::SHAPE_RAY: {
-				shapes.write[i].shape = static_cast<btConvexShape *>(shape_wrapper->shape->internal_create_bt_shape(owner_scale * shape_wrapper->scale, safe_margin));
+				shapes.write[i].shape = static_cast<btConvexShape *>(shape_wrapper->shape->create_bt_shape(owner_scale * shape_wrapper->scale, safe_margin));
 			} break;
 			default:
 				WARN_PRINT("This shape is not supported for kinematic collision.");
@@ -264,6 +264,7 @@ RigidBodyBullet::RigidBodyBullet() :
 	btRigidBody::btRigidBodyConstructionInfo cInfo(mass, godotMotionState, nullptr, localInertia);
 
 	btBody = bulletnew(btRigidBody(cInfo));
+	btBody->setFriction(1.0);
 	reload_shapes();
 	setupBulletCollisionObject(btBody);
 
@@ -307,7 +308,7 @@ void RigidBodyBullet::main_shape_changed() {
 	set_continuous_collision_detection(is_continuous_collision_detection_enabled()); // Reset
 }
 
-void RigidBodyBullet::do_reload_body() {
+void RigidBodyBullet::reload_body() {
 	if (space) {
 		space->remove_rigid_body(this);
 		if (get_main_shape()) {
@@ -326,15 +327,13 @@ void RigidBodyBullet::set_space(SpaceBullet *p_space) {
 		assert_no_constraints();
 
 		// Remove this object form the physics world
-		space->unregister_collision_object(this);
 		space->remove_rigid_body(this);
 	}
 
 	space = p_space;
 
 	if (space) {
-		space->register_collision_object(this);
-		reload_body();
+		space->add_rigid_body(this);
 	}
 }
 
@@ -806,8 +805,8 @@ const btTransform &RigidBodyBullet::get_transform__bullet() const {
 	}
 }
 
-void RigidBodyBullet::do_reload_shapes() {
-	RigidCollisionObjectBullet::do_reload_shapes();
+void RigidBodyBullet::reload_shapes() {
+	RigidCollisionObjectBullet::reload_shapes();
 
 	const btScalar invMass = btBody->getInvMass();
 	const btScalar mass = invMass == 0 ? 0 : 1 / invMass;
@@ -844,8 +843,8 @@ void RigidBodyBullet::on_enter_area(AreaBullet *p_area) {
 		} else {
 			if (areasWhereIam[i]->get_spOv_priority() > p_area->get_spOv_priority()) {
 				// The position was found, just shift all elements
-				for (int j = i; j < areaWhereIamCount; ++j) {
-					areasWhereIam.write[j + 1] = areasWhereIam[j];
+				for (int j = areaWhereIamCount; j > i; j--) {
+					areasWhereIam.write[j] = areasWhereIam[j - 1];
 				}
 				areasWhereIam.write[i] = p_area;
 				break;
@@ -892,8 +891,7 @@ void RigidBodyBullet::on_exit_area(AreaBullet *p_area) {
 }
 
 void RigidBodyBullet::reload_space_override_modificator() {
-	// Make sure that kinematic bodies have their total gravity calculated
-	if (!is_active() && PhysicsServer3D::BODY_MODE_KINEMATIC != mode) {
+	if (mode == PhysicsServer3D::BODY_MODE_STATIC) {
 		return;
 	}
 

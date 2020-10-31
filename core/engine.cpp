@@ -158,8 +158,10 @@ Array Engine::get_copyright_info() const {
 
 Dictionary Engine::get_donor_info() const {
 	Dictionary donors;
-	donors["platinum_sponsors"] = array_from_info(DONORS_SPONSOR_PLAT);
+	donors["platinum_sponsors"] = array_from_info(DONORS_SPONSOR_PLATINUM);
 	donors["gold_sponsors"] = array_from_info(DONORS_SPONSOR_GOLD);
+	donors["silver_sponsors"] = array_from_info(DONORS_SPONSOR_SILVER);
+	donors["bronze_sponsors"] = array_from_info(DONORS_SPONSOR_BRONZE);
 	donors["mini_sponsors"] = array_from_info(DONORS_SPONSOR_MINI);
 	donors["gold_donors"] = array_from_info(DONORS_GOLD);
 	donors["silver_donors"] = array_from_info(DONORS_SILVER);
@@ -177,6 +179,14 @@ Dictionary Engine::get_license_info() const {
 
 String Engine::get_license_text() const {
 	return String(GODOT_LICENSE_TEXT);
+}
+
+bool Engine::is_abort_on_gpu_errors_enabled() const {
+	return abort_on_gpu_errors;
+}
+
+bool Engine::is_validation_layers_enabled() const {
+	return use_validation_layers;
 }
 
 void Engine::add_singleton(const Singleton &p_singleton) {
@@ -204,10 +214,6 @@ Engine *Engine::singleton = nullptr;
 
 Engine *Engine::get_singleton() {
 	return singleton;
-}
-
-bool Engine::is_abort_on_gpu_errors_enabled() const {
-	return abort_on_gpu_errors;
 }
 
 Engine::Engine() {

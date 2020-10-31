@@ -9,6 +9,9 @@
 		[b]Overriding:[/b] Any project setting can be overridden by creating a file named [code]override.cfg[/code] in the project's root directory. This can also be used in exported projects by placing this file in the same directory as the project binary.
 	</description>
 	<tutorials>
+		<link title="3D Physics Tests Demo">https://godotengine.org/asset-library/asset/675</link>
+		<link title="3D Platformer Demo">https://godotengine.org/asset-library/asset/125</link>
+		<link title="OS Test Demo">https://godotengine.org/asset-library/asset/677</link>
 	</tutorials>
 	<methods>
 		<method name="add_property_info">
@@ -92,9 +95,12 @@
 			</argument>
 			<argument index="1" name="replace_files" type="bool" default="true">
 			</argument>
+			<argument index="2" name="offset" type="int" default="0">
+			</argument>
 			<description>
 				Loads the contents of the .pck or .zip file specified by [code]pack[/code] into the resource filesystem ([code]res://[/code]). Returns [code]true[/code] on success.
 				[b]Note:[/b] If a file from [code]pack[/code] shares the same path as a file already in the resource filesystem, any attempts to load that file will use the file from [code]pack[/code] unless [code]replace_files[/code] is set to [code]false[/code].
+				[b]Note:[/b] The optional [code]offset[/code] parameter can be used to specify the offset in bytes to the start of the resource pack. This is only supported for .pck files.
 			</description>
 		</method>
 		<method name="localize_path" qualifiers="const">
@@ -205,7 +211,8 @@
 			Icon set in [code].icns[/code] format used on macOS to set the game's icon. This is done automatically on start by calling [method DisplayServer.set_native_icon].
 		</member>
 		<member name="application/config/name" type="String" setter="" getter="" default="&quot;&quot;">
-			The project's name. It is used both by the Project Manager and by exporters. The project name can be translated by translating its value in localization files.
+			The project's name. It is used both by the Project Manager and by exporters. The project name can be translated by translating its value in localization files. The window title will be set to match the project name automatically on startup.
+			[b]Note:[/b] Changing this value will also change the user data folder's path if [member application/config/use_custom_user_dir] is [code]false[/code]. After renaming the project, you will no longer be able to access existing data in [code]user://[/code] unless you rename the old folder to match the new project name. See [url=https://docs.godotengine.org/en/latest/tutorials/io/data_paths.html]Data paths[/url] in the documentation for more information.
 		</member>
 		<member name="application/config/project_settings_override" type="String" setter="" getter="" default="&quot;&quot;">
 			Specifies a file to override project settings. For example: [code]user://custom_settings.cfg[/code].
@@ -244,7 +251,7 @@
 		<member name="audio/default_bus_layout" type="String" setter="" getter="" default="&quot;res://default_bus_layout.tres&quot;">
 			Default [AudioBusLayout] resource file to use in the project, unless overridden by the scene.
 		</member>
-		<member name="audio/driver" type="String" setter="" getter="" default="&quot;PulseAudio&quot;">
+		<member name="audio/driver" type="String" setter="" getter="">
 			Specifies the audio driver to use. This setting is platform-dependent as each platform supports different audio drivers. If left empty, the default audio driver will be used.
 		</member>
 		<member name="audio/enable_audio_input" type="bool" setter="" getter="" default="false">
@@ -280,6 +287,10 @@
 		<member name="debug/gdscript/completion/autocomplete_setters_and_getters" type="bool" setter="" getter="" default="false">
 			If [code]true[/code], displays getters and setters in autocompletion results in the script editor. This setting is meant to be used when porting old projects (Godot 2), as using member variables is the preferred style from Godot 3 onwards.
 		</member>
+		<member name="debug/gdscript/warnings/assert_always_false" type="bool" setter="" getter="" default="true">
+		</member>
+		<member name="debug/gdscript/warnings/assert_always_true" type="bool" setter="" getter="" default="true">
+		</member>
 		<member name="debug/gdscript/warnings/constant_used_as_function" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables warnings when a constant is used as a function.
 		</member>
@@ -291,15 +302,6 @@
 		</member>
 		<member name="debug/gdscript/warnings/exclude_addons" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], scripts in the [code]res://addons[/code] folder will not generate warnings.
-		</member>
-		<member name="debug/gdscript/warnings/function_conflicts_constant" type="bool" setter="" getter="" default="true">
-			If [code]true[/code], enables warnings when a function is declared with the same name as a constant.
-		</member>
-		<member name="debug/gdscript/warnings/function_conflicts_variable" type="bool" setter="" getter="" default="true">
-			If [code]true[/code], enables warnings when a function is declared with the same name as a variable. This will turn into an error in a future version when first-class functions become supported in GDScript.
-		</member>
-		<member name="debug/gdscript/warnings/function_may_yield" type="bool" setter="" getter="" default="true">
-			If [code]true[/code], enables warnings when a function assigned to a variable may yield and return a function state instead of a value.
 		</member>
 		<member name="debug/gdscript/warnings/function_used_as_property" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables warnings when using a function as if it was a property.
@@ -316,11 +318,15 @@
 		<member name="debug/gdscript/warnings/property_used_as_function" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables warnings when using a property as if it was a function.
 		</member>
+		<member name="debug/gdscript/warnings/redundant_await" type="bool" setter="" getter="" default="true">
+		</member>
 		<member name="debug/gdscript/warnings/return_value_discarded" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables warnings when calling a function without using its return value (by assigning it to a variable or using it as a function argument). Such return values are sometimes used to denote possible errors using the [enum Error] enum.
 		</member>
 		<member name="debug/gdscript/warnings/shadowed_variable" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables warnings when defining a local or subclass member variable that would shadow a variable at an upper level (such as a member variable).
+		</member>
+		<member name="debug/gdscript/warnings/shadowed_variable_base_class" type="bool" setter="" getter="" default="true">
 		</member>
 		<member name="debug/gdscript/warnings/standalone_expression" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables warnings when calling an expression that has no effect on the surrounding code, such as writing [code]2 + 2[/code] as a statement.
@@ -340,6 +346,8 @@
 		<member name="debug/gdscript/warnings/unreachable_code" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables warnings when unreachable code is detected (such as after a [code]return[/code] statement that will always be executed).
 		</member>
+		<member name="debug/gdscript/warnings/unreachable_pattern" type="bool" setter="" getter="" default="true">
+		</member>
 		<member name="debug/gdscript/warnings/unsafe_call_argument" type="bool" setter="" getter="" default="false">
 			If [code]true[/code], enables warnings when using an expression whose type may not be compatible with the function parameter expected.
 		</member>
@@ -352,20 +360,17 @@
 		<member name="debug/gdscript/warnings/unsafe_property_access" type="bool" setter="" getter="" default="false">
 			If [code]true[/code], enables warnings when accessing a property whose presence is not guaranteed at compile-time in the class.
 		</member>
-		<member name="debug/gdscript/warnings/unused_argument" type="bool" setter="" getter="" default="true">
-			If [code]true[/code], enables warnings when a function parameter is unused.
+		<member name="debug/gdscript/warnings/unused_local_constant" type="bool" setter="" getter="" default="true">
 		</member>
-		<member name="debug/gdscript/warnings/unused_class_variable" type="bool" setter="" getter="" default="false">
-			If [code]true[/code], enables warnings when a member variable is unused.
+		<member name="debug/gdscript/warnings/unused_parameter" type="bool" setter="" getter="" default="true">
+		</member>
+		<member name="debug/gdscript/warnings/unused_private_class_variable" type="bool" setter="" getter="" default="true">
 		</member>
 		<member name="debug/gdscript/warnings/unused_signal" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables warnings when a signal is unused.
 		</member>
 		<member name="debug/gdscript/warnings/unused_variable" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables warnings when a local variable is unused.
-		</member>
-		<member name="debug/gdscript/warnings/variable_conflicts_function" type="bool" setter="" getter="" default="true">
-			If [code]true[/code], enables warnings when a variable is declared with the same name as a function. This will turn into an error in a future version when first-class functions become supported in GDScript.
 		</member>
 		<member name="debug/gdscript/warnings/void_assignment" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables warnings when assigning the result of a function that returns [code]void[/code] to a variable.
@@ -453,7 +458,7 @@
 		<member name="display/window/size/width" type="int" setter="" getter="" default="1024">
 			Sets the game's main viewport width. On desktop platforms, this is the default window size. Stretch mode settings also use this as a reference when enabled.
 		</member>
-		<member name="display/window/tablet_driver" type="String" setter="" getter="" default="&quot;&quot;">
+		<member name="display/window/tablet_driver" type="String" setter="" getter="">
 			Specifies the tablet driver to use. If left empty, the default driver will be used.
 		</member>
 		<member name="display/window/vsync/use_vsync" type="bool" setter="" getter="" default="true">
@@ -464,7 +469,7 @@
 			[b]Note:[/b] This option is experimental and meant to alleviate stutter experienced by some users. However, some users have experienced a Vsync framerate halving (e.g. from 60 FPS to 30 FPS) when using it.
 		</member>
 		<member name="editor/script_templates_search_path" type="String" setter="" getter="" default="&quot;res://script_templates&quot;">
-			Search path for project-specific script templates. Script templates will be search both in the editor-specific path and in this project-specific path.
+			Search path for project-specific script templates. Godot will search for script templates both in the editor-specific path and in this project-specific path.
 		</member>
 		<member name="editor/search_in_file_extensions" type="PackedStringArray" setter="" getter="" default="PackedStringArray( &quot;gd&quot;, &quot;shader&quot; )">
 			Text-based file extensions to include in the script editor's "Find in Files" feature. You can add e.g. [code]tscn[/code] if you wish to also parse your scene files, especially if you use built-in scripts which are serialized in the scene files.
@@ -472,7 +477,7 @@
 		<member name="gui/common/default_scroll_deadzone" type="int" setter="" getter="" default="0">
 			Default value for [member ScrollContainer.scroll_deadzone], which will be used for all [ScrollContainer]s unless overridden.
 		</member>
-		<member name="gui/common/swap_cancel_ok" type="bool" setter="" getter="" default="false">
+		<member name="gui/common/swap_cancel_ok" type="bool" setter="" getter="">
 			If [code]true[/code], swaps Cancel and OK buttons in dialogs on Windows and UWP to follow interface conventions.
 		</member>
 		<member name="gui/common/text_edit_undo_stack_max_size" type="int" setter="" getter="" default="1024">
@@ -552,6 +557,9 @@
 		</member>
 		<member name="input_devices/pointing/emulate_touch_from_mouse" type="bool" setter="" getter="" default="false">
 			If [code]true[/code], sends touch input events when clicking or dragging the mouse.
+		</member>
+		<member name="input_devices/pointing/ios/touch_delay" type="float" setter="" getter="" default="0.15">
+			Default delay for touch events. This only affects iOS devices.
 		</member>
 		<member name="layer_names/2d_physics/layer_1" type="String" setter="" getter="" default="&quot;&quot;">
 			Optional name for the 2D physics layer 1.
@@ -810,7 +818,7 @@
 		<member name="logging/file_logging/max_log_files" type="int" setter="" getter="" default="5">
 			Specifies the maximum amount of log files allowed (used for rotation).
 		</member>
-		<member name="memory/limits/message_queue/max_size_kb" type="int" setter="" getter="" default="1024">
+		<member name="memory/limits/message_queue/max_size_kb" type="int" setter="" getter="" default="4096">
 			Godot uses a message queue to defer some function calls. If you run out of space on it (you will see an error), you can increase the size here.
 		</member>
 		<member name="memory/limits/multithreaded_server/rid_pool_prealloc" type="int" setter="" getter="" default="60">
@@ -871,10 +879,11 @@
 			Size of the hash table used for the broad-phase 2D hash grid algorithm.
 		</member>
 		<member name="physics/2d/cell_size" type="int" setter="" getter="" default="128">
-			Cell size used for the broad-phase 2D hash grid algorithm.
+			Cell size used for the broad-phase 2D hash grid algorithm (in pixels).
 		</member>
 		<member name="physics/2d/default_angular_damp" type="float" setter="" getter="" default="1.0">
 			The default angular damp in 2D.
+			[b]Note:[/b] Good values are in the range [code]0[/code] to [code]1[/code]. At value [code]0[/code] objects will keep moving with the same velocity. Values greater than [code]1[/code] will aim to reduce the velocity to [code]0[/code] in less than a second e.g. a value of [code]2[/code] will aim to reduce the velocity to [code]0[/code] in half a second. A value equal to or greater than the physics frame rate ([member ProjectSettings.physics/common/physics_fps], [code]60[/code] by default) will bring the object to a stop in one iteration.
 		</member>
 		<member name="physics/2d/default_gravity" type="int" setter="" getter="" default="98">
 			The default gravity strength in 2D.
@@ -894,6 +903,7 @@
 		</member>
 		<member name="physics/2d/default_linear_damp" type="float" setter="" getter="" default="0.1">
 			The default linear damp in 2D.
+			[b]Note:[/b] Good values are in the range [code]0[/code] to [code]1[/code]. At value [code]0[/code] objects will keep moving with the same velocity. Values greater than [code]1[/code] will aim to reduce the velocity to [code]0[/code] in less than a second e.g. a value of [code]2[/code] will aim to reduce the velocity to [code]0[/code] in half a second. A value equal to or greater than the physics frame rate ([member ProjectSettings.physics/common/physics_fps], [code]60[/code] by default) will bring the object to a stop in one iteration.
 		</member>
 		<member name="physics/2d/large_object_surface_threshold_in_cells" type="int" setter="" getter="" default="512">
 			Threshold defining the surface size that constitutes a large object with regard to cells in the broad-phase 2D hash grid algorithm.
@@ -920,6 +930,7 @@
 		</member>
 		<member name="physics/3d/default_angular_damp" type="float" setter="" getter="" default="0.1">
 			The default angular damp in 3D.
+			[b]Note:[/b] Good values are in the range [code]0[/code] to [code]1[/code]. At value [code]0[/code] objects will keep moving with the same velocity. Values greater than [code]1[/code] will aim to reduce the velocity to [code]0[/code] in less than a second e.g. a value of [code]2[/code] will aim to reduce the velocity to [code]0[/code] in half a second. A value equal to or greater than the physics frame rate ([member ProjectSettings.physics/common/physics_fps], [code]60[/code] by default) will bring the object to a stop in one iteration.
 		</member>
 		<member name="physics/3d/default_gravity" type="float" setter="" getter="" default="9.8">
 			The default gravity strength in 3D.
@@ -939,6 +950,7 @@
 		</member>
 		<member name="physics/3d/default_linear_damp" type="float" setter="" getter="" default="0.1">
 			The default linear damp in 3D.
+			[b]Note:[/b] Good values are in the range [code]0[/code] to [code]1[/code]. At value [code]0[/code] objects will keep moving with the same velocity. Values greater than [code]1[/code] will aim to reduce the velocity to [code]0[/code] in less than a second e.g. a value of [code]2[/code] will aim to reduce the velocity to [code]0[/code] in half a second. A value equal to or greater than the physics frame rate ([member ProjectSettings.physics/common/physics_fps], [code]60[/code] by default) will bring the object to a stop in one iteration.
 		</member>
 		<member name="physics/3d/physics_engine" type="String" setter="" getter="" default="&quot;DEFAULT&quot;">
 			Sets which physics engine to use for 3D physics.
@@ -992,10 +1004,6 @@
 		</member>
 		<member name="rendering/limits/time/time_rollover_secs" type="float" setter="" getter="" default="3600">
 		</member>
-		<member name="rendering/quality/2d/gles2_use_nvidia_rect_flicker_workaround" type="bool" setter="" getter="" default="false">
-			Some NVIDIA GPU drivers have a bug which produces flickering issues for the [code]draw_rect[/code] method, especially as used in [TileMap]. Refer to [url=https://github.com/godotengine/godot/issues/9913]GitHub issue 9913[/url] for details.
-			If [code]true[/code], this option enables a "safe" code path for such NVIDIA GPUs at the cost of performance. This option only impacts the GLES2 rendering backend, and only desktop platforms. It is not necessary when using the Vulkan backend.
-		</member>
 		<member name="rendering/quality/2d/use_pixel_snap" type="bool" setter="" getter="" default="false">
 			If [code]true[/code], forces snapping of polygons to pixels in 2D rendering. May help in some pixel art styles.
 		</member>
@@ -1043,6 +1051,9 @@
 		</member>
 		<member name="rendering/quality/glow/upscale_mode.mobile" type="int" setter="" getter="" default="0">
 			Lower-end override for [member rendering/quality/glow/upscale_mode] on mobile devices, due to performance concerns or driver support.
+		</member>
+		<member name="rendering/quality/glow/use_high_quality" type="bool" setter="" getter="" default="false">
+			Takes more samples during downsample pass of glow. This ensures that single pixels are captured by glow which makes the glow look smoother and more stable during movement. However, it is very expensive and makes the glow post process take twice as long.
 		</member>
 		<member name="rendering/quality/intended_usage/framebuffer_allocation" type="int" setter="" getter="" default="2">
 			Strategy used for framebuffer allocation. The simpler it is, the less resources it uses (but the less features it supports). If set to "2D Without Sampling" or "3D Without Effects", sample buffers will not be allocated. This means [code]SCREEN_TEXTURE[/code] and [code]DEPTH_TEXTURE[/code] will not be available in shaders and post-processing effects will not be available in the [Environment].
@@ -1164,6 +1175,16 @@
 		<member name="rendering/threads/thread_model" type="int" setter="" getter="" default="1">
 			Thread model for rendering. Rendering on a thread can vastly improve performance, but synchronizing to the main thread can cause a bit more jitter.
 		</member>
+		<member name="rendering/volumetric_fog/directional_shadow_shrink" type="int" setter="" getter="" default="512">
+		</member>
+		<member name="rendering/volumetric_fog/positional_shadow_shrink" type="int" setter="" getter="" default="512">
+		</member>
+		<member name="rendering/volumetric_fog/use_filter" type="int" setter="" getter="" default="0">
+		</member>
+		<member name="rendering/volumetric_fog/volume_depth" type="int" setter="" getter="" default="128">
+		</member>
+		<member name="rendering/volumetric_fog/volume_size" type="int" setter="" getter="" default="64">
+		</member>
 		<member name="rendering/vram_compression/import_bptc" type="bool" setter="" getter="" default="false">
 			If [code]true[/code], the texture importer will import VRAM-compressed textures using the BPTC algorithm. This texture compression algorithm is only supported on desktop platforms, and only when using the Vulkan renderer.
 		</member>
@@ -1188,7 +1209,7 @@
 		<member name="rendering/vulkan/staging_buffer/texture_upload_region_size_px" type="int" setter="" getter="" default="64">
 		</member>
 		<member name="world/2d/cell_size" type="int" setter="" getter="" default="100">
-			Cell size used for the 2D hash grid that [VisibilityNotifier2D] uses.
+			Cell size used for the 2D hash grid that [VisibilityNotifier2D] uses (in pixels).
 		</member>
 	</members>
 	<constants>

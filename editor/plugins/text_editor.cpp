@@ -34,27 +34,32 @@
 #include "editor/editor_node.h"
 
 void TextEditor::add_syntax_highlighter(Ref<EditorSyntaxHighlighter> p_highlighter) {
+	ERR_FAIL_COND(p_highlighter.is_null());
+
 	highlighters[p_highlighter->_get_name()] = p_highlighter;
 	highlighter_menu->add_radio_check_item(p_highlighter->_get_name());
 }
 
 void TextEditor::set_syntax_highlighter(Ref<EditorSyntaxHighlighter> p_highlighter) {
-	TextEdit *te = code_editor->get_text_edit();
+	ERR_FAIL_COND(p_highlighter.is_null());
+
+	Map<String, Ref<EditorSyntaxHighlighter>>::Element *el = highlighters.front();
+	while (el != nullptr) {
+		int highlighter_index = highlighter_menu->get_item_idx_from_text(el->key());
+		highlighter_menu->set_item_checked(highlighter_index, el->value() == p_highlighter);
+		el = el->next();
+	}
+
+	CodeEdit *te = code_editor->get_text_editor();
 	te->set_syntax_highlighter(p_highlighter);
-	highlighter_menu->set_item_checked(highlighter_menu->get_item_idx_from_text(p_highlighter->_get_name()), true);
 }
 
 void TextEditor::_change_syntax_highlighter(int p_idx) {
-	Map<String, Ref<EditorSyntaxHighlighter>>::Element *el = highlighters.front();
-	while (el != nullptr) {
-		highlighter_menu->set_item_checked(highlighter_menu->get_item_idx_from_text(el->key()), false);
-		el = el->next();
-	}
 	set_syntax_highlighter(highlighters[highlighter_menu->get_item_text(p_idx)]);
 }
 
 void TextEditor::_load_theme_settings() {
-	TextEdit *text_edit = code_editor->get_text_edit();
+	CodeEdit *text_edit = code_editor->get_text_editor();
 	text_edit->get_syntax_highlighter()->update_cache();
 
 	Color background_color = EDITOR_GET("text_editor/highlighting/background_color");
@@ -114,6 +119,9 @@ String TextEditor::get_name() {
 	if (text_file->get_path().find("local://") == -1 && text_file->get_path().find("::") == -1) {
 		name = text_file->get_path().get_file();
 		if (is_unsaved()) {
+			if (text_file->get_path().empty()) {
+				name = TTR("[unsaved]");
+			}
 			name += "(*)";
 		}
 	} else if (text_file->get_name() != "") {
@@ -126,7 +134,7 @@ String TextEditor::get_name() {
 }
 
 Ref<Texture2D> TextEditor::get_theme_icon() {
-	return EditorNode::get_singleton()->get_object_icon(text_file.operator->(), "");
+	return EditorNode::get_singleton()->get_object_icon(text_file.ptr(), "");
 }
 
 RES TextEditor::get_edited_resource() const {
@@ -134,16 +142,27 @@ RES TextEditor::get_edited_resource() const {
 }
 
 void TextEditor::set_edited_resource(const RES &p_res) {
-	ERR_FAIL_COND(!text_file.is_null());
+	ERR_FAIL_COND(text_file.is_valid());
+	ERR_FAIL_COND(p_res.is_null());
 
 	text_file = p_res;
 
-	code_editor->get_text_edit()->set_text(text_file->get_text());
-	code_editor->get_text_edit()->clear_undo_history();
-	code_editor->get_text_edit()->tag_saved_version();
+	code_editor->get_text_editor()->set_text(text_file->get_text());
+	code_editor->get_text_editor()->clear_undo_history();
+	code_editor->get_text_editor()->tag_saved_version();
 
 	emit_signal("name_changed");
 	code_editor->update_line_and_column();
+}
+
+void TextEditor::enable_editor() {
+	if (editor_enabled) {
+		return;
+	}
+
+	editor_enabled = true;
+
+	_load_theme_settings();
 }
 
 void TextEditor::add_callback(const String &p_function, PackedStringArray p_args) {
@@ -152,13 +171,14 @@ void TextEditor::add_callback(const String &p_function, PackedStringArray p_args
 void TextEditor::set_debugger_active(bool p_active) {
 }
 
-void TextEditor::get_breakpoints(List<int> *p_breakpoints) {
+Array TextEditor::get_breakpoints() {
+	return Array();
 }
 
 void TextEditor::reload_text() {
 	ERR_FAIL_COND(text_file.is_null());
 
-	TextEdit *te = code_editor->get_text_edit();
+	CodeEdit *te = code_editor->get_text_editor();
 	int column = te->cursor_get_column();
 	int row = te->cursor_get_line();
 	int h = te->get_h_scroll();
@@ -188,7 +208,7 @@ void TextEditor::_update_bookmark_list() {
 	bookmarks_menu->add_shortcut(ED_GET_SHORTCUT("script_text_editor/goto_next_bookmark"), BOOKMARK_GOTO_NEXT);
 	bookmarks_menu->add_shortcut(ED_GET_SHORTCUT("script_text_editor/goto_previous_bookmark"), BOOKMARK_GOTO_PREV);
 
-	Array bookmark_list = code_editor->get_text_edit()->get_bookmarks_array();
+	Array bookmark_list = code_editor->get_text_editor()->get_bookmarked_lines();
 	if (bookmark_list.size() == 0) {
 		return;
 	}
@@ -196,7 +216,7 @@ void TextEditor::_update_bookmark_list() {
 	bookmarks_menu->add_separator();
 
 	for (int i = 0; i < bookmark_list.size(); i++) {
-		String line = code_editor->get_text_edit()->get_line(bookmark_list[i]).strip_edges();
+		String line = code_editor->get_text_editor()->get_line(bookmark_list[i]).strip_edges();
 		// Limit the size of the line if too big.
 		if (line.length() > 50) {
 			line = line.substr(0, 50);
@@ -216,11 +236,14 @@ void TextEditor::_bookmark_item_pressed(int p_idx) {
 }
 
 void TextEditor::apply_code() {
-	text_file->set_text(code_editor->get_text_edit()->get_text());
+	text_file->set_text(code_editor->get_text_editor()->get_text());
 }
 
 bool TextEditor::is_unsaved() {
-	return code_editor->get_text_edit()->get_version() != code_editor->get_text_edit()->get_saved_version();
+	const bool unsaved =
+			code_editor->get_text_editor()->get_version() != code_editor->get_text_editor()->get_saved_version() ||
+			text_file->get_path().empty(); // In memory.
+	return unsaved;
 }
 
 Variant TextEditor::get_edit_state() {
@@ -237,6 +260,8 @@ void TextEditor::set_edit_state(const Variant &p_state) {
 			_change_syntax_highlighter(idx);
 		}
 	}
+
+	ensure_focus();
 }
 
 void TextEditor::trim_trailing_whitespace() {
@@ -256,7 +281,7 @@ void TextEditor::convert_indent_to_tabs() {
 }
 
 void TextEditor::tag_saved_version() {
-	code_editor->get_text_edit()->tag_saved_version();
+	code_editor->get_text_editor()->tag_saved_version();
 }
 
 void TextEditor::goto_line(int p_line, bool p_with_error) {
@@ -276,7 +301,7 @@ void TextEditor::clear_executing_line() {
 }
 
 void TextEditor::ensure_focus() {
-	code_editor->get_text_edit()->grab_focus();
+	code_editor->get_text_editor()->grab_focus();
 }
 
 Vector<String> TextEditor::get_functions() {
@@ -292,7 +317,7 @@ void TextEditor::update_settings() {
 }
 
 void TextEditor::set_tooltip_request_func(String p_method, Object *p_obj) {
-	code_editor->get_text_edit()->set_tooltip_request_func(p_obj, p_method, this);
+	code_editor->get_text_editor()->set_tooltip_request_func(p_obj, p_method, this);
 }
 
 Control *TextEditor::get_edit_menu() {
@@ -303,16 +328,8 @@ void TextEditor::clear_edit_menu() {
 	memdelete(edit_hb);
 }
 
-void TextEditor::_notification(int p_what) {
-	switch (p_what) {
-		case NOTIFICATION_READY:
-			_load_theme_settings();
-			break;
-	}
-}
-
 void TextEditor::_edit_option(int p_op) {
-	TextEdit *tx = code_editor->get_text_edit();
+	CodeEdit *tx = code_editor->get_text_editor();
 
 	switch (p_op) {
 		case EDIT_UNDO: {
@@ -400,14 +417,14 @@ void TextEditor::_edit_option(int p_op) {
 			code_editor->get_find_replace_bar()->popup_replace();
 		} break;
 		case SEARCH_IN_FILES: {
-			String selected_text = code_editor->get_text_edit()->get_selection_text();
+			String selected_text = code_editor->get_text_editor()->get_selection_text();
 
 			// Yep, because it doesn't make sense to instance this dialog for every single script open...
 			// So this will be delegated to the ScriptEditor.
 			emit_signal("search_in_files_requested", selected_text);
 		} break;
 		case REPLACE_IN_FILES: {
-			String selected_text = code_editor->get_text_edit()->get_selection_text();
+			String selected_text = code_editor->get_text_editor()->get_selection_text();
 
 			emit_signal("replace_in_files_requested", selected_text);
 		} break;
@@ -454,7 +471,7 @@ void TextEditor::_text_edit_gui_input(const Ref<InputEvent> &ev) {
 	if (mb.is_valid()) {
 		if (mb->get_button_index() == BUTTON_RIGHT) {
 			int col, row;
-			TextEdit *tx = code_editor->get_text_edit();
+			CodeEdit *tx = code_editor->get_text_editor();
 			tx->_get_mouse_pos(mb->get_global_position() - tx->get_global_position(), row, col);
 
 			tx->set_right_click_moves_caret(EditorSettings::get_singleton()->get("text_editor/cursor/right_click_moves_caret"));
@@ -487,7 +504,7 @@ void TextEditor::_text_edit_gui_input(const Ref<InputEvent> &ev) {
 
 	Ref<InputEventKey> k = ev;
 	if (k.is_valid() && k->is_pressed() && k->get_keycode() == KEY_MENU) {
-		TextEdit *tx = code_editor->get_text_edit();
+		CodeEdit *tx = code_editor->get_text_editor();
 		int line = tx->cursor_get_line();
 		_make_context_menu(tx->is_selection_active(), tx->can_fold(line), tx->is_folded(line), (get_global_transform().inverse() * tx->get_global_transform()).xform(tx->_get_cursor_pixel_pos()));
 		context_menu->grab_focus();
@@ -536,8 +553,8 @@ TextEditor::TextEditor() {
 
 	update_settings();
 
-	code_editor->get_text_edit()->set_context_menu_enabled(false);
-	code_editor->get_text_edit()->connect("gui_input", callable_mp(this, &TextEditor::_text_edit_gui_input));
+	code_editor->get_text_editor()->set_context_menu_enabled(false);
+	code_editor->get_text_editor()->connect("gui_input", callable_mp(this, &TextEditor::_text_edit_gui_input));
 
 	context_menu = memnew(PopupMenu);
 	add_child(context_menu);
@@ -633,7 +650,7 @@ TextEditor::TextEditor() {
 	goto_line_dialog = memnew(GotoLineDialog);
 	add_child(goto_line_dialog);
 
-	code_editor->get_text_edit()->set_drag_forwarding(this);
+	code_editor->get_text_editor()->set_drag_forwarding(this);
 }
 
 TextEditor::~TextEditor() {

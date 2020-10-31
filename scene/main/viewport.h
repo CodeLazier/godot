@@ -225,6 +225,8 @@ private:
 	bool gen_mipmaps;
 
 	bool snap_controls_to_pixels;
+	bool snap_2d_transforms_to_pixel;
+	bool snap_2d_vertices_to_pixel;
 
 	bool physics_object_picking;
 	List<Ref<InputEvent>> physics_picking_events;
@@ -279,6 +281,7 @@ private:
 
 	MSAA msaa;
 	ScreenSpaceAA screen_space_aa;
+	bool use_debanding = false;
 	Ref<ViewportTexture> default_texture;
 	Set<ViewportTexture *> viewport_textures;
 
@@ -356,9 +359,6 @@ private:
 	DefaultCanvasItemTextureFilter default_canvas_item_texture_filter;
 	DefaultCanvasItemTextureRepeat default_canvas_item_texture_repeat;
 
-	void _propagate_update_default_filter(Node *p_node);
-	void _propagate_update_default_repeat(Node *p_node);
-
 	bool disable_input;
 
 	void _gui_call_input(Control *p_control, const Ref<InputEvent> &p_input);
@@ -387,7 +387,7 @@ private:
 	void _gui_show_tooltip();
 
 	void _gui_remove_control(Control *p_control);
-	void _gui_hid_control(Control *p_control);
+	void _gui_hide_control(Control *p_control);
 
 	void _gui_force_drag(Control *p_base, const Variant &p_data, Control *p_control);
 	void _gui_set_drag_preview(Control *p_base, Control *p_control);
@@ -521,6 +521,9 @@ public:
 	void set_screen_space_aa(ScreenSpaceAA p_screen_space_aa);
 	ScreenSpaceAA get_screen_space_aa() const;
 
+	void set_use_debanding(bool p_use_debanding);
+	bool is_using_debanding() const;
+
 	Vector2 get_camera_coords(const Vector2 &p_viewport_coords) const;
 	Vector2 get_camera_rect_size() const;
 
@@ -554,6 +557,12 @@ public:
 
 	void set_snap_controls_to_pixels(bool p_enable);
 	bool is_snap_controls_to_pixels_enabled() const;
+
+	void set_snap_2d_transforms_to_pixel(bool p_enable);
+	bool is_snap_2d_transforms_to_pixel_enabled() const;
+
+	void set_snap_2d_vertices_to_pixel(bool p_enable);
+	bool is_snap_2d_vertices_to_pixel_enabled() const;
 
 	void set_input_as_handled();
 	bool is_input_handled() const;

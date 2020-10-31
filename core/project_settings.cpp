@@ -53,6 +53,8 @@ String ProjectSettings::get_resource_path() const {
 	return resource_path;
 }
 
+const String ProjectSettings::IMPORTED_FILES_PATH("res://.godot/imported");
+
 String ProjectSettings::localize_path(const String &p_path) const {
 	if (resource_path == "") {
 		return p_path; //not initialized yet
@@ -120,6 +122,22 @@ void ProjectSettings::set_initial_value(const String &p_name, const Variant &p_v
 void ProjectSettings::set_restart_if_changed(const String &p_name, bool p_restart) {
 	ERR_FAIL_COND_MSG(!props.has(p_name), "Request for nonexistent project setting: " + p_name + ".");
 	props[p_name].restart_if_changed = p_restart;
+}
+
+void ProjectSettings::set_ignore_value_in_docs(const String &p_name, bool p_ignore) {
+	ERR_FAIL_COND_MSG(!props.has(p_name), "Request for nonexistent project setting: " + p_name + ".");
+#ifdef DEBUG_METHODS_ENABLED
+	props[p_name].ignore_value_in_docs = p_ignore;
+#endif
+}
+
+bool ProjectSettings::get_ignore_value_in_docs(const String &p_name) const {
+	ERR_FAIL_COND_V_MSG(!props.has(p_name), false, "Request for nonexistent project setting: " + p_name + ".");
+#ifdef DEBUG_METHODS_ENABLED
+	return props[p_name].ignore_value_in_docs;
+#else
+	return false;
+#endif
 }
 
 String ProjectSettings::globalize_path(const String &p_path) const {
@@ -275,12 +293,12 @@ void ProjectSettings::_get_property_list(List<PropertyInfo> *p_list) const {
 	}
 }
 
-bool ProjectSettings::_load_resource_pack(const String &p_pack, bool p_replace_files) {
+bool ProjectSettings::_load_resource_pack(const String &p_pack, bool p_replace_files, int p_offset) {
 	if (PackedData::get_singleton()->is_disabled()) {
 		return false;
 	}
 
-	bool ok = PackedData::get_singleton()->add_pack(p_pack, p_replace_files) == OK;
+	bool ok = PackedData::get_singleton()->add_pack(p_pack, p_replace_files, p_offset) == OK;
 
 	if (!ok) {
 		return false;
@@ -611,19 +629,26 @@ Error ProjectSettings::_load_settings_text(const String &p_path) {
 }
 
 Error ProjectSettings::_load_settings_text_or_binary(const String &p_text_path, const String &p_bin_path) {
-	// Attempt first to load the text-based project.godot file
-	Error err_text = _load_settings_text(p_text_path);
-	if (err_text == OK) {
+	// Attempt first to load the binary project.godot file.
+	Error err = _load_settings_binary(p_bin_path);
+	if (err == OK) {
 		return OK;
-	} else if (err_text != ERR_FILE_NOT_FOUND) {
-		// If the text-based file exists but can't be loaded, we want to know it
-		ERR_PRINT("Couldn't load file '" + p_text_path + "', error code " + itos(err_text) + ".");
-		return err_text;
+	} else if (err != ERR_FILE_NOT_FOUND) {
+		// If the file exists but can't be loaded, we want to know it.
+		ERR_PRINT("Couldn't load file '" + p_bin_path + "', error code " + itos(err) + ".");
+		return err;
 	}
 
-	// Fallback to binary project.binary file if text-based was not found
-	Error err_bin = _load_settings_binary(p_bin_path);
-	return err_bin;
+	// Fallback to text-based project.godot file if binary was not found.
+	err = _load_settings_text(p_text_path);
+	if (err == OK) {
+		return OK;
+	} else if (err != ERR_FILE_NOT_FOUND) {
+		ERR_PRINT("Couldn't load file '" + p_text_path + "', error code " + itos(err) + ".");
+		return err;
+	}
+
+	return err;
 }
 
 int ProjectSettings::get_order(const String &p_name) const {
@@ -641,6 +666,12 @@ void ProjectSettings::set_builtin_order(const String &p_name) {
 	if (props[p_name].order >= NO_BUILTIN_ORDER_BASE) {
 		props[p_name].order = last_builtin_order++;
 	}
+}
+
+bool ProjectSettings::is_builtin_setting(const String &p_name) const {
+	// Return true because a false negative is worse than a false positive.
+	ERR_FAIL_COND_V_MSG(!props.has(p_name), true, "Request for nonexistent project setting: " + p_name + ".");
+	return props[p_name].order < NO_BUILTIN_ORDER_BASE;
 }
 
 void ProjectSettings::clear(const String &p_name) {
@@ -876,7 +907,7 @@ Error ProjectSettings::save_custom(const String &p_path, const CustomMap &p_cust
 	}
 }
 
-Variant _GLOBAL_DEF(const String &p_var, const Variant &p_default, bool p_restart_if_changed) {
+Variant _GLOBAL_DEF(const String &p_var, const Variant &p_default, bool p_restart_if_changed, bool p_ignore_value_in_docs) {
 	Variant ret;
 	if (!ProjectSettings::get_singleton()->has_setting(p_var)) {
 		ProjectSettings::get_singleton()->set(p_var, p_default);
@@ -886,6 +917,7 @@ Variant _GLOBAL_DEF(const String &p_var, const Variant &p_default, bool p_restar
 	ProjectSettings::get_singleton()->set_initial_value(p_var, p_default);
 	ProjectSettings::get_singleton()->set_builtin_order(p_var);
 	ProjectSettings::get_singleton()->set_restart_if_changed(p_var, p_restart_if_changed);
+	ProjectSettings::get_singleton()->set_ignore_value_in_docs(p_var, p_ignore_value_in_docs);
 	return ret;
 }
 
@@ -1007,7 +1039,7 @@ void ProjectSettings::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("localize_path", "path"), &ProjectSettings::localize_path);
 	ClassDB::bind_method(D_METHOD("globalize_path", "path"), &ProjectSettings::globalize_path);
 	ClassDB::bind_method(D_METHOD("save"), &ProjectSettings::save);
-	ClassDB::bind_method(D_METHOD("load_resource_pack", "pack", "replace_files"), &ProjectSettings::_load_resource_pack, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("load_resource_pack", "pack", "replace_files", "offset"), &ProjectSettings::_load_resource_pack, DEFVAL(true), DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("property_can_revert", "name"), &ProjectSettings::property_can_revert);
 	ClassDB::bind_method(D_METHOD("property_get_revert", "name"), &ProjectSettings::property_get_revert);
 

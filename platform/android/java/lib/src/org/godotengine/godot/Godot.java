@@ -70,6 +70,7 @@ import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.Settings.Secure;
 import android.view.Display;
+import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -151,8 +152,7 @@ public class Godot extends Fragment implements SensorEventListener, IDownloaderC
 
 	private void setButtonPausedState(boolean paused) {
 		mStatePaused = paused;
-		int stringResourceID = paused ? R.string.text_button_resume :
-										R.string.text_button_pause;
+		int stringResourceID = paused ? R.string.text_button_resume : R.string.text_button_pause;
 		mPauseButton.setText(stringResourceID);
 	}
 
@@ -221,7 +221,8 @@ public class Godot extends Fragment implements SensorEventListener, IDownloaderC
 
 		// GodotEditText layout
 		GodotEditText editText = new GodotEditText(activity);
-		editText.setLayoutParams(new ViewGroup.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+		editText.setLayoutParams(new ViewGroup.LayoutParams(LayoutParams.MATCH_PARENT,
+				(int)getResources().getDimension(R.dimen.text_edit_height)));
 		// ...add to FrameLayout
 		containerLayout.addView(editText);
 
@@ -467,7 +468,6 @@ public class Godot extends Fragment implements SensorEventListener, IDownloaderC
 		final Activity activity = getActivity();
 		Window window = activity.getWindow();
 		window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
-		window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
 		mClipboard = (ClipboardManager)activity.getSystemService(Context.CLIPBOARD_SERVICE);
 		pluginRegistry = GodotPluginRegistry.initializePluginRegistry(this);
 
@@ -853,63 +853,6 @@ public class Godot extends Fragment implements SensorEventListener, IDownloaderC
 			e.printStackTrace();
 			return true;
 		}
-	}
-
-	public boolean gotTouchEvent(final MotionEvent event) {
-		final int evcount = event.getPointerCount();
-		if (evcount == 0)
-			return true;
-
-		if (mRenderView != null) {
-			final int[] arr = new int[event.getPointerCount() * 3];
-
-			for (int i = 0; i < event.getPointerCount(); i++) {
-				arr[i * 3 + 0] = (int)event.getPointerId(i);
-				arr[i * 3 + 1] = (int)event.getX(i);
-				arr[i * 3 + 2] = (int)event.getY(i);
-			}
-			final int pointer_idx = event.getPointerId(event.getActionIndex());
-
-			//System.out.printf("gaction: %d\n",event.getAction());
-			final int action = event.getAction() & MotionEvent.ACTION_MASK;
-			mRenderView.queueOnRenderThread(new Runnable() {
-				@Override
-				public void run() {
-					switch (action) {
-						case MotionEvent.ACTION_DOWN: {
-							GodotLib.touch(0, 0, evcount, arr);
-							//System.out.printf("action down at: %f,%f\n", event.getX(),event.getY());
-						} break;
-						case MotionEvent.ACTION_MOVE: {
-							GodotLib.touch(1, 0, evcount, arr);
-							/*
-							for(int i=0;i<event.getPointerCount();i++) {
-								System.out.printf("%d - moved to: %f,%f\n",i, event.getX(i),event.getY(i));
-							}
-							*/
-						} break;
-						case MotionEvent.ACTION_POINTER_UP: {
-							GodotLib.touch(4, pointer_idx, evcount, arr);
-							//System.out.printf("%d - s.up at: %f,%f\n",pointer_idx, event.getX(pointer_idx),event.getY(pointer_idx));
-						} break;
-						case MotionEvent.ACTION_POINTER_DOWN: {
-							GodotLib.touch(3, pointer_idx, evcount, arr);
-							//System.out.printf("%d - s.down at: %f,%f\n",pointer_idx, event.getX(pointer_idx),event.getY(pointer_idx));
-						} break;
-						case MotionEvent.ACTION_CANCEL:
-						case MotionEvent.ACTION_UP: {
-							GodotLib.touch(2, 0, evcount, arr);
-							/*
-							for(int i=0;i<event.getPointerCount();i++) {
-								System.out.printf("%d - up! %f,%f\n",i, event.getX(i),event.getY(i));
-							}
-							*/
-						} break;
-					}
-				}
-			});
-		}
-		return true;
 	}
 
 	public boolean onKeyMultiple(final int inKeyCode, int repeatCount, KeyEvent event) {

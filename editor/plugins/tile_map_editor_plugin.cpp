@@ -65,7 +65,7 @@ void TileMapEditor::_notification(int p_what) {
 
 			paint_button->set_icon(get_theme_icon("Edit", "EditorIcons"));
 			line_button->set_icon(get_theme_icon("CurveLinear", "EditorIcons"));
-			rectangle_button->set_icon(get_theme_icon("RectangleShape2D", "EditorIcons"));
+			rectangle_button->set_icon(get_theme_icon("Rectangle", "EditorIcons"));
 			bucket_fill_button->set_icon(get_theme_icon("Bucket", "EditorIcons"));
 			picker_button->set_icon(get_theme_icon("ColorPick", "EditorIcons"));
 			select_button->set_icon(get_theme_icon("ActionCopy", "EditorIcons"));
@@ -88,6 +88,25 @@ void TileMapEditor::_notification(int p_what) {
 
 		case NOTIFICATION_EXIT_TREE: {
 			get_tree()->disconnect("node_removed", callable_mp(this, &TileMapEditor::_node_removed));
+		} break;
+
+		case NOTIFICATION_APPLICATION_FOCUS_OUT: {
+			if (tool == TOOL_PAINTING) {
+				Vector<int> ids = get_selected_tiles();
+
+				if (ids.size() > 0 && ids[0] != TileMap::INVALID_CELL) {
+					_set_cell(over_tile, ids, flip_h, flip_v, transpose);
+					_finish_undo();
+
+					paint_undo.clear();
+				}
+
+				tool = TOOL_NONE;
+				_update_button_tool();
+			}
+
+			// set flag to ignore over_tile on refocus
+			refocus_over_tile = true;
 		} break;
 	}
 }
@@ -394,7 +413,9 @@ struct _PaletteEntry {
 	String name;
 
 	bool operator<(const _PaletteEntry &p_rhs) const {
-		return name < p_rhs.name;
+		// Natural no case comparison will compare strings based on CharType
+		// order (except digits) and on numbers that start on the same position.
+		return name.naturalnocasecmp_to(p_rhs.name) < 0;
 	}
 };
 } // namespace
@@ -802,7 +823,6 @@ void TileMapEditor::_draw_cell(Control *p_viewport, int p_cell, const Point2i &p
 		r.size = node->get_tileset()->autotile_get_size(p_cell);
 		r.position += (r.size + Vector2(spacing, spacing)) * offset;
 	}
-	Size2 sc = p_xform.get_scale();
 	Size2 cell_size = node->get_cell_size();
 	bool centered_texture = node->is_centered_textures_enabled();
 	bool compatibility_mode_enabled = node->is_compatibility_mode_enabled();
@@ -838,12 +858,12 @@ void TileMapEditor::_draw_cell(Control *p_viewport, int p_cell, const Point2i &p
 	}
 
 	if (p_flip_h) {
-		sc.x *= -1.0;
+		rect.size.x *= -1.0;
 		tile_ofs.x *= -1.0;
 	}
 
 	if (p_flip_v) {
-		sc.y *= -1.0;
+		rect.size.y *= -1.0;
 		tile_ofs.y *= -1.0;
 	}
 
@@ -886,17 +906,17 @@ void TileMapEditor::_draw_cell(Control *p_viewport, int p_cell, const Point2i &p
 		rect.position += tile_ofs;
 	}
 
-	rect.position = p_xform.xform(rect.position);
-	rect.size *= sc;
-
 	Color modulate = node->get_tileset()->tile_get_modulate(p_cell);
 	modulate.a = 0.5;
 
+	Transform2D old_transform = p_viewport->get_viewport_transform();
+	p_viewport->draw_set_transform_matrix(p_xform); // Take into account TileMap transformation when displaying cell
 	if (r.has_no_area()) {
 		p_viewport->draw_texture_rect(t, rect, false, modulate, p_transpose);
 	} else {
 		p_viewport->draw_texture_rect_region(t, rect, r, modulate, p_transpose);
 	}
+	p_viewport->draw_set_transform_matrix(old_transform);
 }
 
 void TileMapEditor::_draw_fill_preview(Control *p_viewport, int p_cell, const Point2i &p_point, bool p_flip_h, bool p_flip_v, bool p_transpose, const Point2i &p_autotile_coord, const Transform2D &p_xform) {
@@ -1298,6 +1318,12 @@ bool TileMapEditor::forward_gui_input(const Ref<InputEvent> &p_event) {
 		if (new_over_tile != over_tile) {
 			over_tile = new_over_tile;
 			CanvasItemEditor::get_singleton()->update_viewport();
+		}
+
+		if (refocus_over_tile) {
+			// editor lost focus; forget last tile position
+			old_over_tile = new_over_tile;
+			refocus_over_tile = false;
 		}
 
 		int tile_under = node->get_cell(over_tile.x, over_tile.y);

@@ -1493,7 +1493,7 @@ String Viewport::_gui_get_tooltip(Control *p_control, const Vector2 &p_pos, Cont
 		if (p_control->data.mouse_filter == Control::MOUSE_FILTER_STOP) {
 			break;
 		}
-		if (p_control->is_set_as_toplevel()) {
+		if (p_control->is_set_as_top_level()) {
 			break;
 		}
 
@@ -1509,7 +1509,7 @@ void Viewport::_gui_show_tooltip() {
 	}
 
 	Control *which = nullptr;
-	String tooltip = _gui_get_tooltip(gui.tooltip, gui.tooltip->get_global_transform().xform_inv(gui.tooltip_pos), &which);
+	String tooltip = _gui_get_tooltip(gui.tooltip, gui.tooltip->get_global_transform().xform_inv(gui.last_mouse_pos), &which);
 	tooltip = tooltip.strip_edges();
 	if (tooltip.length() == 0) {
 		return; // bye
@@ -1607,10 +1607,20 @@ void Viewport::_gui_call_input(Control *p_control, const Ref<InputEvent> &p_inpu
 			}
 
 			if (control->data.mouse_filter != Control::MOUSE_FILTER_IGNORE) {
-				control->call_multilevel(SceneStringNames::get_singleton()->_gui_input, ev);
+				// Call both script and native methods.
+				Callable::CallError error;
+				Variant event = ev;
+				const Variant *args[1] = { &event };
+				if (control->get_script_instance()) {
+					control->get_script_instance()->call(SceneStringNames::get_singleton()->_gui_input, args, 1, error);
+				}
+				MethodBind *method = ClassDB::get_method(control->get_class_name(), SceneStringNames::get_singleton()->_gui_input);
+				if (method) {
+					method->call(control, args, 1, error);
+				}
 			}
 
-			if (!control->is_inside_tree() || control->is_set_as_toplevel()) {
+			if (!control->is_inside_tree() || control->is_set_as_top_level()) {
 				break;
 			}
 			if (gui.key_event_accepted) {
@@ -1621,7 +1631,7 @@ void Viewport::_gui_call_input(Control *p_control, const Ref<InputEvent> &p_inpu
 			}
 		}
 
-		if (ci->is_set_as_toplevel()) {
+		if (ci->is_set_as_top_level()) {
 			break;
 		}
 
@@ -1645,7 +1655,7 @@ void Viewport::_gui_call_notification(Control *p_control, int p_what) {
 				break;
 			}
 
-			if (!control->is_inside_tree() || control->is_set_as_toplevel()) {
+			if (!control->is_inside_tree() || control->is_set_as_top_level()) {
 				break;
 			}
 			if (control->data.mouse_filter == Control::MOUSE_FILTER_STOP) {
@@ -1653,7 +1663,7 @@ void Viewport::_gui_call_notification(Control *p_control, int p_what) {
 			}
 		}
 
-		if (ci->is_set_as_toplevel()) {
+		if (ci->is_set_as_top_level()) {
 			break;
 		}
 
@@ -1711,7 +1721,7 @@ Control *Viewport::_gui_find_control_at_pos(CanvasItem *p_node, const Point2 &p_
 	if (!c || !c->clips_input() || c->has_point(matrix.affine_inverse().xform(p_global))) {
 		for (int i = p_node->get_child_count() - 1; i >= 0; i--) {
 			CanvasItem *ci = Object::cast_to<CanvasItem>(p_node->get_child(i));
-			if (!ci || ci->is_set_as_toplevel()) {
+			if (!ci || ci->is_set_as_top_level()) {
 				continue;
 			}
 
@@ -1758,7 +1768,7 @@ bool Viewport::_gui_drop(Control *p_at_control, Point2 p_at_pos, bool p_just_che
 
 			p_at_pos = ci->get_transform().xform(p_at_pos);
 
-			if (ci->is_set_as_toplevel()) {
+			if (ci->is_set_as_top_level()) {
 				break;
 			}
 
@@ -1855,7 +1865,7 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 						}
 					}
 
-					if (ci->is_set_as_toplevel()) {
+					if (ci->is_set_as_top_level()) {
 						break;
 					}
 
@@ -1983,7 +1993,7 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 							}
 						}
 
-						if (ci->is_set_as_toplevel()) {
+						if (ci->is_set_as_top_level()) {
 							break;
 						}
 
@@ -2095,7 +2105,7 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 					if (c->data.mouse_filter == Control::MOUSE_FILTER_STOP) {
 						break;
 					}
-					if (c->is_set_as_toplevel()) {
+					if (c->is_set_as_top_level()) {
 						break;
 					}
 					c = c->get_parent_control();
@@ -2306,7 +2316,7 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 		if (gui.key_focus) {
 			gui.key_event_accepted = false;
 			if (gui.key_focus->can_process()) {
-				gui.key_focus->call_multilevel(SceneStringNames::get_singleton()->_gui_input, p_event);
+				gui.key_focus->call(SceneStringNames::get_singleton()->_gui_input, p_event);
 				if (gui.key_focus) { //maybe lost it
 					gui.key_focus->emit_signal(SceneStringNames::get_singleton()->gui_input, p_event);
 				}
@@ -2394,7 +2404,7 @@ void Viewport::_gui_set_drag_preview(Control *p_base, Control *p_control) {
 	if (gui.drag_preview) {
 		memdelete(gui.drag_preview);
 	}
-	p_control->set_as_toplevel(true);
+	p_control->set_as_top_level(true);
 	p_control->set_position(gui.last_mouse_pos);
 	p_base->get_root_parent_control()->add_child(p_control); //add as child of viewport
 	p_control->raise();
@@ -2412,7 +2422,7 @@ void Viewport::_gui_unfocus_control(Control *p_control) {
 	}
 }
 
-void Viewport::_gui_hid_control(Control *p_control) {
+void Viewport::_gui_hide_control(Control *p_control) {
 	if (gui.mouse_focus == p_control) {
 		_drop_mouse_focus();
 	}
@@ -2516,7 +2526,7 @@ void Viewport::_drop_mouse_focus() {
 			mb->set_global_position(c->get_local_mouse_position());
 			mb->set_button_index(i + 1);
 			mb->set_pressed(false);
-			c->call_multilevel(SceneStringNames::get_singleton()->_gui_input, mb);
+			c->call(SceneStringNames::get_singleton()->_gui_input, mb);
 		}
 	}
 }
@@ -2581,7 +2591,7 @@ void Viewport::_post_gui_grab_click_focus() {
 				mb->set_position(click);
 				mb->set_button_index(i + 1);
 				mb->set_pressed(false);
-				gui.mouse_focus->call_multilevel(SceneStringNames::get_singleton()->_gui_input, mb);
+				gui.mouse_focus->call(SceneStringNames::get_singleton()->_gui_input, mb);
 			}
 		}
 
@@ -2989,10 +2999,8 @@ void Viewport::unhandled_input(const Ref<InputEvent> &p_event, bool p_local_coor
 	}
 
 	get_tree()->_call_input_pause(unhandled_input_group, "_unhandled_input", ev, this);
-	//call_group(GROUP_CALL_REVERSE|GROUP_CALL_REALTIME|GROUP_CALL_MULIILEVEL,"unhandled_input","_unhandled_input",ev);
 	if (!is_input_handled() && Object::cast_to<InputEventKey>(*ev) != nullptr) {
 		get_tree()->_call_input_pause(unhandled_key_input_group, "_unhandled_key_input", ev, this);
-		//call_group(GROUP_CALL_REVERSE|GROUP_CALL_REALTIME|GROUP_CALL_MULIILEVEL,"unhandled_key_input","_unhandled_key_input",ev);
 	}
 
 	if (physics_object_picking && !is_input_handled()) {
@@ -3085,10 +3093,15 @@ String Viewport::get_configuration_warning() const {
 		return TTR("This viewport is not set as render target. If you intend for it to display its contents directly to the screen, make it a child of a Control so it can obtain a size. Otherwise, make it a RenderTarget and assign its internal texture to some node for display.");
 	}*/
 
+	String warning = Node::get_configuration_warning();
+
 	if (size.x == 0 || size.y == 0) {
-		return TTR("Viewport size must be greater than 0 to render anything.");
+		if (!warning.empty()) {
+			warning += "\n\n";
+		}
+		warning += TTR("Viewport size must be greater than 0 to render anything.");
 	}
-	return String();
+	return warning;
 }
 
 void Viewport::gui_reset_canvas_sort_index() {
@@ -3125,6 +3138,17 @@ Viewport::ScreenSpaceAA Viewport::get_screen_space_aa() const {
 	return screen_space_aa;
 }
 
+void Viewport::set_use_debanding(bool p_use_debanding) {
+	if (use_debanding == p_use_debanding)
+		return;
+	use_debanding = p_use_debanding;
+	RS::get_singleton()->viewport_set_use_debanding(viewport, p_use_debanding);
+}
+
+bool Viewport::is_using_debanding() const {
+	return use_debanding;
+}
+
 void Viewport::set_debug_draw(DebugDraw p_debug_draw) {
 	debug_draw = p_debug_draw;
 	RS::get_singleton()->viewport_set_debug_draw(viewport, RS::ViewportDebugDraw(p_debug_draw));
@@ -3144,6 +3168,24 @@ void Viewport::set_snap_controls_to_pixels(bool p_enable) {
 
 bool Viewport::is_snap_controls_to_pixels_enabled() const {
 	return snap_controls_to_pixels;
+}
+
+void Viewport::set_snap_2d_transforms_to_pixel(bool p_enable) {
+	snap_2d_transforms_to_pixel = p_enable;
+	RS::get_singleton()->viewport_set_snap_2d_transforms_to_pixel(viewport, snap_2d_transforms_to_pixel);
+}
+
+bool Viewport::is_snap_2d_transforms_to_pixel_enabled() const {
+	return snap_2d_transforms_to_pixel;
+}
+
+void Viewport::set_snap_2d_vertices_to_pixel(bool p_enable) {
+	snap_2d_vertices_to_pixel = p_enable;
+	RS::get_singleton()->viewport_set_snap_2d_vertices_to_pixel(viewport, snap_2d_vertices_to_pixel);
+}
+
+bool Viewport::is_snap_2d_vertices_to_pixel_enabled() const {
+	return snap_2d_vertices_to_pixel;
 }
 
 bool Viewport::gui_is_dragging() const {
@@ -3200,11 +3242,28 @@ void Viewport::_validate_property(PropertyInfo &property) const {
 }
 
 void Viewport::set_default_canvas_item_texture_filter(DefaultCanvasItemTextureFilter p_filter) {
+	ERR_FAIL_INDEX(p_filter, DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_MAX);
+
 	if (default_canvas_item_texture_filter == p_filter) {
 		return;
 	}
 	default_canvas_item_texture_filter = p_filter;
-	_propagate_update_default_filter(this);
+	switch (default_canvas_item_texture_filter) {
+		case DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST:
+			RS::get_singleton()->viewport_set_default_canvas_item_texture_filter(viewport, RS::CANVAS_ITEM_TEXTURE_FILTER_NEAREST);
+			break;
+		case DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_LINEAR:
+			RS::get_singleton()->viewport_set_default_canvas_item_texture_filter(viewport, RS::CANVAS_ITEM_TEXTURE_FILTER_LINEAR);
+			break;
+		case DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS:
+			RS::get_singleton()->viewport_set_default_canvas_item_texture_filter(viewport, RS::CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS);
+			break;
+		case DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST_WITH_MIPMAPS:
+			RS::get_singleton()->viewport_set_default_canvas_item_texture_filter(viewport, RS::CANVAS_ITEM_TEXTURE_FILTER_NEAREST_WITH_MIPMAPS);
+			break;
+		default: {
+		}
+	}
 }
 
 Viewport::DefaultCanvasItemTextureFilter Viewport::get_default_canvas_item_texture_filter() const {
@@ -3212,37 +3271,31 @@ Viewport::DefaultCanvasItemTextureFilter Viewport::get_default_canvas_item_textu
 }
 
 void Viewport::set_default_canvas_item_texture_repeat(DefaultCanvasItemTextureRepeat p_repeat) {
+	ERR_FAIL_INDEX(p_repeat, DEFAULT_CANVAS_ITEM_TEXTURE_REPEAT_MAX);
+
 	if (default_canvas_item_texture_repeat == p_repeat) {
 		return;
 	}
+
 	default_canvas_item_texture_repeat = p_repeat;
-	_propagate_update_default_repeat(this);
+
+	switch (default_canvas_item_texture_repeat) {
+		case DEFAULT_CANVAS_ITEM_TEXTURE_REPEAT_DISABLED:
+			RS::get_singleton()->viewport_set_default_canvas_item_texture_repeat(viewport, RS::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
+			break;
+		case DEFAULT_CANVAS_ITEM_TEXTURE_REPEAT_ENABLED:
+			RS::get_singleton()->viewport_set_default_canvas_item_texture_repeat(viewport, RS::CANVAS_ITEM_TEXTURE_REPEAT_ENABLED);
+			break;
+		case DEFAULT_CANVAS_ITEM_TEXTURE_REPEAT_MIRROR:
+			RS::get_singleton()->viewport_set_default_canvas_item_texture_repeat(viewport, RS::CANVAS_ITEM_TEXTURE_REPEAT_MIRROR);
+			break;
+		default: {
+		}
+	}
 }
 
 Viewport::DefaultCanvasItemTextureRepeat Viewport::get_default_canvas_item_texture_repeat() const {
 	return default_canvas_item_texture_repeat;
-}
-
-void Viewport::_propagate_update_default_filter(Node *p_node) {
-	CanvasItem *ci = Object::cast_to<CanvasItem>(p_node);
-	if (ci) {
-		ci->_update_texture_filter_changed(false);
-	}
-
-	for (int i = 0; i < p_node->get_child_count(); i++) {
-		_propagate_update_default_filter(p_node->get_child(i));
-	}
-}
-
-void Viewport::_propagate_update_default_repeat(Node *p_node) {
-	CanvasItem *ci = Object::cast_to<CanvasItem>(p_node);
-	if (ci) {
-		ci->_update_texture_repeat_changed(false);
-	}
-
-	for (int i = 0; i < p_node->get_child_count(); i++) {
-		_propagate_update_default_repeat(p_node->get_child(i));
-	}
 }
 
 DisplayServer::WindowID Viewport::get_window_id() const {
@@ -3311,6 +3364,9 @@ void Viewport::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_screen_space_aa", "screen_space_aa"), &Viewport::set_screen_space_aa);
 	ClassDB::bind_method(D_METHOD("get_screen_space_aa"), &Viewport::get_screen_space_aa);
 
+	ClassDB::bind_method(D_METHOD("set_use_debanding", "enable"), &Viewport::set_use_debanding);
+	ClassDB::bind_method(D_METHOD("is_using_debanding"), &Viewport::is_using_debanding);
+
 	ClassDB::bind_method(D_METHOD("set_debug_draw", "debug_draw"), &Viewport::set_debug_draw);
 	ClassDB::bind_method(D_METHOD("get_debug_draw"), &Viewport::get_debug_draw);
 
@@ -3357,6 +3413,12 @@ void Viewport::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_snap_controls_to_pixels", "enabled"), &Viewport::set_snap_controls_to_pixels);
 	ClassDB::bind_method(D_METHOD("is_snap_controls_to_pixels_enabled"), &Viewport::is_snap_controls_to_pixels_enabled);
 
+	ClassDB::bind_method(D_METHOD("set_snap_2d_transforms_to_pixel", "enabled"), &Viewport::set_snap_2d_transforms_to_pixel);
+	ClassDB::bind_method(D_METHOD("is_snap_2d_transforms_to_pixel_enabled"), &Viewport::is_snap_2d_transforms_to_pixel_enabled);
+
+	ClassDB::bind_method(D_METHOD("set_snap_2d_vertices_to_pixel", "enabled"), &Viewport::set_snap_2d_vertices_to_pixel);
+	ClassDB::bind_method(D_METHOD("is_snap_2d_vertices_to_pixel_enabled"), &Viewport::is_snap_2d_vertices_to_pixel_enabled);
+
 	ClassDB::bind_method(D_METHOD("set_shadow_atlas_quadrant_subdiv", "quadrant", "subdiv"), &Viewport::set_shadow_atlas_quadrant_subdiv);
 	ClassDB::bind_method(D_METHOD("get_shadow_atlas_quadrant_subdiv", "quadrant"), &Viewport::get_shadow_atlas_quadrant_subdiv);
 
@@ -3381,9 +3443,12 @@ void Viewport::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "world_2d", PROPERTY_HINT_RESOURCE_TYPE, "World2D", 0), "set_world_2d", "get_world_2d");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "transparent_bg"), "set_transparent_background", "has_transparent_background");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "handle_input_locally"), "set_handle_input_locally", "is_handling_input_locally");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "snap_2d_transforms_to_pixel"), "set_snap_2d_transforms_to_pixel", "is_snap_2d_transforms_to_pixel_enabled");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "snap_2d_vertices_to_pixel"), "set_snap_2d_vertices_to_pixel", "is_snap_2d_vertices_to_pixel_enabled");
 	ADD_GROUP("Rendering", "");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "msaa", PROPERTY_HINT_ENUM, "Disabled,2x,4x,8x,16x,AndroidVR 2x,AndroidVR 4x"), "set_msaa", "get_msaa");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "screen_space_aa", PROPERTY_HINT_ENUM, "Disabled,FXAA"), "set_screen_space_aa", "get_screen_space_aa");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_debanding"), "set_use_debanding", "is_using_debanding");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "debug_draw", PROPERTY_HINT_ENUM, "Disabled,Unshaded,Overdraw,Wireframe"), "set_debug_draw", "get_debug_draw");
 	ADD_GROUP("Canvas Items", "canvas_item_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "canvas_item_default_texture_filter", PROPERTY_HINT_ENUM, "Nearest,Linear,MipmapLinear,MipmapNearest"), "set_default_canvas_item_texture_filter", "get_default_canvas_item_texture_filter");
@@ -3538,6 +3603,9 @@ Viewport::Viewport() {
 	debug_draw = DEBUG_DRAW_DISABLED;
 
 	snap_controls_to_pixels = true;
+	snap_2d_transforms_to_pixel = false;
+	snap_2d_vertices_to_pixel = false;
+
 	physics_last_mouse_state.alt = false;
 	physics_last_mouse_state.control = false;
 	physics_last_mouse_state.shift = false;

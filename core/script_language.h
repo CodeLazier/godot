@@ -199,9 +199,6 @@ public:
 	virtual bool has_method(const StringName &p_method) const = 0;
 	virtual Variant call(const StringName &p_method, VARIANT_ARG_LIST);
 	virtual Variant call(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) = 0;
-	virtual void call_multilevel(const StringName &p_method, VARIANT_ARG_LIST);
-	virtual void call_multilevel(const StringName &p_method, const Variant **p_args, int p_argcount);
-	virtual void call_multilevel_reversed(const StringName &p_method, const Variant **p_args, int p_argcount);
 	virtual void notification(int p_notification) = 0;
 	virtual String to_string(bool *r_valid) {
 		if (r_valid) {
@@ -258,6 +255,7 @@ struct ScriptCodeCompletionOption {
 	String insert_text;
 	Color font_color;
 	RES icon;
+	Variant default_value;
 
 	ScriptCodeCompletionOption() {}
 
@@ -428,8 +426,6 @@ public:
 		r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
 		return Variant();
 	}
-	//virtual void call_multilevel(const StringName& p_method,VARIANT_ARG_LIST) { return Variant(); }
-	//virtual void call_multilevel(const StringName& p_method,const Variant** p_args,int p_argcount,Callable::CallError &r_error) { return Variant(); }
 	virtual void notification(int p_notification) {}
 
 	virtual Ref<Script> get_script() const { return script; }

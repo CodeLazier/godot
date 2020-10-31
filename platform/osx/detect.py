@@ -1,6 +1,5 @@
 import os
 import sys
-import subprocess
 from methods import detect_darwin_sdk_path
 
 
@@ -28,7 +27,8 @@ def get_opts():
         ("MACOS_SDK_PATH", "Path to the macOS SDK", ""),
         BoolVariable(
             "use_static_mvk",
-            "Link MoltenVK statically as Level-0 driver (better portability) or use Vulkan ICD loader (enables validation layers)",
+            "Link MoltenVK statically as Level-0 driver (better portability) or use Vulkan ICD loader (enables"
+            " validation layers)",
             False,
         ),
         EnumVariable("debug_symbols", "Add debugging symbols to release builds", "yes", ("yes", "no", "full")),
@@ -50,9 +50,11 @@ def configure(env):
 
     if env["target"] == "release":
         if env["optimize"] == "speed":  # optimize for speed (default)
-            env.Prepend(CCFLAGS=["-O3", "-fomit-frame-pointer", "-ftree-vectorize", "-msse2"])
+            env.Prepend(CCFLAGS=["-O3", "-fomit-frame-pointer", "-ftree-vectorize"])
         else:  # optimize for size
-            env.Prepend(CCFLAGS=["-Os", "-ftree-vectorize", "-msse2"])
+            env.Prepend(CCFLAGS=["-Os", "-ftree-vectorize"])
+        if env["arch"] != "arm64":
+            env.Prepend(CCFLAGS=["-msse2"])
 
         if env["debug_symbols"] == "yes":
             env.Prepend(CCFLAGS=["-g1"])
@@ -73,6 +75,7 @@ def configure(env):
     elif env["target"] == "debug":
         env.Prepend(CCFLAGS=["-g3"])
         env.Prepend(CPPDEFINES=["DEBUG_ENABLED"])
+        env.Prepend(LINKFLAGS=["-Xlinker", "-no_deduplicate"])
 
     ## Architecture
 
@@ -136,7 +139,8 @@ def configure(env):
         env.Append(CPPDEFINES=["__MACPORTS__"])  # hack to fix libvpx MM256_BROADCASTSI128_SI256 define
 
     if env["CXX"] == "clang++":
-        env.Append(CPPDEFINES=["TYPED_METHOD_BIND"])
+        # This should now work with clang++, re-enable if there are issues
+        # env.Append(CPPDEFINES=["TYPED_METHOD_BIND"])
         env["CC"] = "clang"
         env["LINK"] = "clang++"
 

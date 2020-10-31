@@ -635,7 +635,7 @@ void GDScriptFunctions::call(Function p_func, const Variant **p_args, int p_arg_
 		case TEXT_CHAR: {
 			VALIDATE_ARG_COUNT(1);
 			VALIDATE_ARG_NUM(0);
-			CharType result[2] = { *p_args[0], 0 };
+			char32_t result[2] = { *p_args[0], 0 };
 			r_ret = String(result);
 		} break;
 		case TEXT_ORD: {
@@ -1636,7 +1636,7 @@ MethodInfo GDScriptFunctions::get_info(Function p_func) {
 			return mi;
 		} break;
 		case MATH_SMOOTHSTEP: {
-			MethodInfo mi("smoothstep", PropertyInfo(Variant::FLOAT, "from"), PropertyInfo(Variant::FLOAT, "to"), PropertyInfo(Variant::FLOAT, "weight"));
+			MethodInfo mi("smoothstep", PropertyInfo(Variant::FLOAT, "from"), PropertyInfo(Variant::FLOAT, "to"), PropertyInfo(Variant::FLOAT, "s"));
 			mi.return_val.type = Variant::FLOAT;
 			return mi;
 		} break;

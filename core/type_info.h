@@ -31,7 +31,7 @@
 #ifndef TYPE_INFO_H
 #define TYPE_INFO_H
 
-#ifdef DEBUG_METHODS_ENABLED
+#include "core/typedefs.h"
 
 template <bool C, typename T = void>
 struct EnableIf {
@@ -132,7 +132,8 @@ MAKE_TYPE_INFO_WITH_META(uint32_t, Variant::INT, GodotTypeInfo::METADATA_INT_IS_
 MAKE_TYPE_INFO_WITH_META(int32_t, Variant::INT, GodotTypeInfo::METADATA_INT_IS_INT32)
 MAKE_TYPE_INFO_WITH_META(uint64_t, Variant::INT, GodotTypeInfo::METADATA_INT_IS_UINT64)
 MAKE_TYPE_INFO_WITH_META(int64_t, Variant::INT, GodotTypeInfo::METADATA_INT_IS_INT64)
-MAKE_TYPE_INFO(wchar_t, Variant::INT)
+MAKE_TYPE_INFO(char16_t, Variant::INT)
+MAKE_TYPE_INFO(char32_t, Variant::INT)
 MAKE_TYPE_INFO_WITH_META(float, Variant::FLOAT, GodotTypeInfo::METADATA_REAL_IS_FLOAT)
 MAKE_TYPE_INFO_WITH_META(double, Variant::FLOAT, GodotTypeInfo::METADATA_REAL_IS_DOUBLE)
 
@@ -265,12 +266,5 @@ inline StringName __constant_get_enum_name(T param, const String &p_constant) {
 }
 
 #define CLASS_INFO(m_type) (GetTypeInfo<m_type *>::get_class_info())
-
-#else
-
-#define MAKE_ENUM_TYPE_INFO(m_enum)
-#define CLASS_INFO(m_type)
-
-#endif // DEBUG_METHODS_ENABLED
 
 #endif // TYPE_INFO_H

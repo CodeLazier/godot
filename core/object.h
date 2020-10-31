@@ -31,6 +31,7 @@
 #ifndef OBJECT_H
 #define OBJECT_H
 
+#include "core/callable_bind.h"
 #include "core/hash_map.h"
 #include "core/list.h"
 #include "core/map.h"
@@ -655,13 +656,10 @@ public:
 	void get_method_list(List<MethodInfo> *p_list) const;
 	Variant callv(const StringName &p_method, const Array &p_args);
 	virtual Variant call(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error);
-	virtual void call_multilevel(const StringName &p_method, const Variant **p_args, int p_argcount);
-	virtual void call_multilevel_reversed(const StringName &p_method, const Variant **p_args, int p_argcount);
 	Variant call(const StringName &p_name, VARIANT_ARG_LIST); // C++ helper
-	void call_multilevel(const StringName &p_name, VARIANT_ARG_LIST); // C++ helper
 
 	void notification(int p_notification, bool p_reversed = false);
-	String to_string();
+	virtual String to_string();
 
 	//used mainly by script, get and set all INCLUDING string
 	virtual Variant getvar(const Variant &p_key, bool *r_valid = nullptr) const;
@@ -722,7 +720,8 @@ public:
 
 	virtual void get_argument_options(const StringName &p_function, int p_idx, List<String> *r_options) const;
 
-	StringName tr(const StringName &p_message) const; // translate message (internationalization)
+	String tr(const StringName &p_message, const StringName &p_context = "") const; // translate message (internationalization)
+	String tr_n(const StringName &p_message, const StringName &p_message_plural, int p_n, const StringName &p_context = "") const;
 
 	bool _is_queued_for_deletion = false; // set to true by SceneTree::queue_delete()
 	bool is_queued_for_deletion() const;
@@ -812,8 +811,5 @@ public:
 	static void debug_objects(DebugFunc p_func);
 	static int get_object_count();
 };
-
-//needed by macros
-#include "core/class_db.h"
 
 #endif // OBJECT_H

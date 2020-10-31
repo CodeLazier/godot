@@ -185,8 +185,16 @@ DisplayServer::WindowID DisplayServer::create_sub_window(WindowMode p_mode, uint
 	ERR_FAIL_V_MSG(INVALID_WINDOW_ID, "Sub-windows not supported by this display server.");
 }
 
+void DisplayServer::show_window(WindowID p_id) {
+	ERR_FAIL_MSG("Sub-windows not supported by this display server.");
+}
+
 void DisplayServer::delete_sub_window(WindowID p_id) {
 	ERR_FAIL_MSG("Sub-windows not supported by this display server.");
+}
+
+void DisplayServer::window_set_mouse_passthrough(const Vector<Vector2> &p_region, WindowID p_window) {
+	ERR_FAIL_MSG("Mouse passthrough not supported by this display server.");
 }
 
 void DisplayServer::window_set_ime_active(const bool p_active, WindowID p_window) {
@@ -213,7 +221,7 @@ bool DisplayServer::is_console_visible() const {
 	return false;
 }
 
-void DisplayServer::virtual_keyboard_show(const String &p_existing_text, const Rect2 &p_screen_rect, int p_max_length, int p_cursor_start, int p_cursor_end) {
+void DisplayServer::virtual_keyboard_show(const String &p_existing_text, const Rect2 &p_screen_rect, bool p_multiline, int p_max_length, int p_cursor_start, int p_cursor_end) {
 	WARN_PRINT("Virtual keyboard not supported by this display server.");
 }
 
@@ -407,6 +415,7 @@ void DisplayServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("delete_sub_window", "window_id"), &DisplayServer::delete_sub_window);
 
 	ClassDB::bind_method(D_METHOD("window_set_title", "title", "window_id"), &DisplayServer::window_set_title, DEFVAL(MAIN_WINDOW_ID));
+	ClassDB::bind_method(D_METHOD("window_set_mouse_passthrough", "region", "window_id"), &DisplayServer::window_set_mouse_passthrough, DEFVAL(MAIN_WINDOW_ID));
 
 	ClassDB::bind_method(D_METHOD("window_get_current_screen", "window_id"), &DisplayServer::window_get_current_screen, DEFVAL(MAIN_WINDOW_ID));
 	ClassDB::bind_method(D_METHOD("window_set_current_screen", "screen", "window_id"), &DisplayServer::window_set_current_screen, DEFVAL(MAIN_WINDOW_ID));
@@ -455,7 +464,7 @@ void DisplayServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("console_set_visible", "console_visible"), &DisplayServer::console_set_visible);
 	ClassDB::bind_method(D_METHOD("is_console_visible"), &DisplayServer::is_console_visible);
 
-	ClassDB::bind_method(D_METHOD("virtual_keyboard_show", "existing_text", "position", "max_length", "cursor_start", "cursor_end"), &DisplayServer::virtual_keyboard_show, DEFVAL(Rect2i()), DEFVAL(-1), DEFVAL(-1), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("virtual_keyboard_show", "existing_text", "position", "multiline", "max_length", "cursor_start", "cursor_end"), &DisplayServer::virtual_keyboard_show, DEFVAL(Rect2i()), DEFVAL(false), DEFVAL(-1), DEFVAL(-1), DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("virtual_keyboard_hide"), &DisplayServer::virtual_keyboard_hide);
 
 	ClassDB::bind_method(D_METHOD("virtual_keyboard_get_height"), &DisplayServer::virtual_keyboard_get_height);

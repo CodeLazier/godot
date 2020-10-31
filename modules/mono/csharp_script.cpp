@@ -44,7 +44,6 @@
 
 #ifdef TOOLS_ENABLED
 #include "editor/bindings_generator.h"
-#include "editor/csharp_project.h"
 #include "editor/editor_node.h"
 #include "editor/node_dock.h"
 #endif
@@ -897,7 +896,7 @@ void CSharpLanguage::reload_assemblies(bool p_soft_reload) {
 
 			// Call OnBeforeSerialize
 			if (csi->script->script_class->implements_interface(CACHED_CLASS(ISerializationListener))) {
-				obj->get_script_instance()->call_multilevel(string_names.on_before_serialize);
+				obj->get_script_instance()->call(string_names.on_before_serialize);
 			}
 
 			// Save instance info
@@ -941,8 +940,6 @@ void CSharpLanguage::reload_assemblies(bool p_soft_reload) {
 
 				// Use a placeholder for now to avoid losing the state when saving a scene
 
-				obj->set_script(scr);
-
 				PlaceHolderScriptInstance *placeholder = scr->placeholder_instance_create(obj);
 				obj->set_script_instance(placeholder);
 
@@ -969,14 +966,13 @@ void CSharpLanguage::reload_assemblies(bool p_soft_reload) {
 	for (List<Ref<CSharpScript>>::Element *E = to_reload.front(); E; E = E->next()) {
 		Ref<CSharpScript> script = E->get();
 
-		if (!script->get_path().empty()) {
 #ifdef TOOLS_ENABLED
-			script->exports_invalidated = true;
+		script->exports_invalidated = true;
 #endif
-			script->signals_invalidated = true;
+		script->signals_invalidated = true;
 
+		if (!script->get_path().empty()) {
 			script->reload(p_soft_reload);
-			script->update_exports();
 
 			if (!script->valid) {
 				script->pending_reload_instances.clear();
@@ -1133,7 +1129,7 @@ void CSharpLanguage::reload_assemblies(bool p_soft_reload) {
 
 				// Call OnAfterDeserialization
 				if (csi->script->script_class->implements_interface(CACHED_CLASS(ISerializationListener))) {
-					obj->get_script_instance()->call_multilevel(string_names.on_after_deserialize);
+					obj->get_script_instance()->call(string_names.on_after_deserialize);
 				}
 			}
 		}
@@ -1866,41 +1862,6 @@ Variant CSharpInstance::call(const StringName &p_method, const Variant **p_args,
 	return Variant();
 }
 
-void CSharpInstance::call_multilevel(const StringName &p_method, const Variant **p_args, int p_argcount) {
-	GD_MONO_SCOPE_THREAD_ATTACH;
-
-	if (script.is_valid()) {
-		MonoObject *mono_object = get_mono_object();
-
-		ERR_FAIL_NULL(mono_object);
-
-		_call_multilevel(mono_object, p_method, p_args, p_argcount);
-	}
-}
-
-void CSharpInstance::_call_multilevel(MonoObject *p_mono_object, const StringName &p_method, const Variant **p_args, int p_argcount) {
-	GD_MONO_ASSERT_THREAD_ATTACHED;
-
-	GDMonoClass *top = script->script_class;
-
-	while (top && top != script->native) {
-		GDMonoMethod *method = top->get_method(p_method, p_argcount);
-
-		if (method) {
-			method->invoke(p_mono_object, p_args);
-			return;
-		}
-
-		top = top->get_parent_class();
-	}
-}
-
-void CSharpInstance::call_multilevel_reversed(const StringName &p_method, const Variant **p_args, int p_argcount) {
-	// Sorry, the method is the one that controls the call order
-
-	call_multilevel(p_method, p_args, p_argcount);
-}
-
 bool CSharpInstance::_reference_owner_unsafe() {
 #ifdef DEBUG_ENABLED
 	CRASH_COND(!base_ref);
@@ -1986,6 +1947,7 @@ MonoObject *CSharpInstance::_internal_new_managed() {
 }
 
 void CSharpInstance::mono_object_disposed(MonoObject *p_obj) {
+	// Must make sure event signals are not left dangling
 	disconnect_event_signals();
 
 #ifdef DEBUG_ENABLED
@@ -2000,6 +1962,9 @@ void CSharpInstance::mono_object_disposed_baseref(MonoObject *p_obj, bool p_is_f
 	CRASH_COND(!base_ref);
 	CRASH_COND(gchandle.is_released());
 #endif
+
+	// Must make sure event signals are not left dangling
+	disconnect_event_signals();
 
 	r_remove_script_instance = false;
 
@@ -2259,6 +2224,9 @@ CSharpInstance::~CSharpInstance() {
 	GD_MONO_SCOPE_THREAD_ATTACH;
 
 	destructing_script_instance = true;
+
+	// Must make sure event signals are not left dangling
+	disconnect_event_signals();
 
 	if (!gchandle.is_released()) {
 		if (!predelete_notified && !ref_dying) {
@@ -2738,7 +2706,7 @@ bool CSharpScript::_get_member_export(IMonoClassMember *p_member, bool p_inspect
 		if (!property->has_getter()) {
 #ifdef TOOLS_ENABLED
 			if (exported) {
-				ERR_PRINT("Read-only property cannot be exported: '" + MEMBER_FULL_QUALIFIED_NAME(p_member) + "'.");
+				ERR_PRINT("Cannot export a property without a getter: '" + MEMBER_FULL_QUALIFIED_NAME(p_member) + "'.");
 			}
 #endif
 			return false;
@@ -2746,7 +2714,7 @@ bool CSharpScript::_get_member_export(IMonoClassMember *p_member, bool p_inspect
 		if (!property->has_setter()) {
 #ifdef TOOLS_ENABLED
 			if (exported) {
-				ERR_PRINT("Write-only property (without getter) cannot be exported: '" + MEMBER_FULL_QUALIFIED_NAME(p_member) + "'.");
+				ERR_PRINT("Cannot export a property without a setter: '" + MEMBER_FULL_QUALIFIED_NAME(p_member) + "'.");
 			}
 #endif
 			return false;
@@ -2991,13 +2959,24 @@ void CSharpScript::initialize_for_managed_type(Ref<CSharpScript> p_script, GDMon
 
 	CRASH_COND(p_script->native == nullptr);
 
+	p_script->valid = true;
+
+	update_script_class_info(p_script);
+
+#ifdef TOOLS_ENABLED
+	p_script->_update_member_info_no_exports();
+#endif
+}
+
+// Extract information about the script using the mono class.
+void CSharpScript::update_script_class_info(Ref<CSharpScript> p_script) {
 	GDMonoClass *base = p_script->script_class->get_parent_class();
 
+	// `base` should only be set if the script is a user defined type.
 	if (base != p_script->native) {
 		p_script->base = base;
 	}
 
-	p_script->valid = true;
 	p_script->tool = p_script->script_class->has_attribute(CACHED_CLASS(ToolAttribute));
 
 	if (!p_script->tool) {
@@ -3032,17 +3011,74 @@ void CSharpScript::initialize_for_managed_type(Ref<CSharpScript> p_script, GDMon
 
 	p_script->script_class->fetch_methods_with_godot_api_checks(p_script->native);
 
-	// Need to fetch method from base classes as well
+	p_script->rpc_functions.clear();
+	p_script->rpc_variables.clear();
+
 	GDMonoClass *top = p_script->script_class;
 	while (top && top != p_script->native) {
+		// Fetch methods from base classes as well
 		top->fetch_methods_with_godot_api_checks(p_script->native);
+
+		// Update RPC info
+		{
+			Vector<GDMonoMethod *> methods = top->get_all_methods();
+			for (int i = 0; i < methods.size(); i++) {
+				if (!methods[i]->is_static()) {
+					MultiplayerAPI::RPCMode mode = p_script->_member_get_rpc_mode(methods[i]);
+					if (MultiplayerAPI::RPC_MODE_DISABLED != mode) {
+						ScriptNetData nd;
+						nd.name = methods[i]->get_name();
+						nd.mode = mode;
+						if (-1 == p_script->rpc_functions.find(nd)) {
+							p_script->rpc_functions.push_back(nd);
+						}
+					}
+				}
+			}
+		}
+
+		{
+			Vector<GDMonoField *> fields = top->get_all_fields();
+			for (int i = 0; i < fields.size(); i++) {
+				if (!fields[i]->is_static()) {
+					MultiplayerAPI::RPCMode mode = p_script->_member_get_rpc_mode(fields[i]);
+					if (MultiplayerAPI::RPC_MODE_DISABLED != mode) {
+						ScriptNetData nd;
+						nd.name = fields[i]->get_name();
+						nd.mode = mode;
+						if (-1 == p_script->rpc_variables.find(nd)) {
+							p_script->rpc_variables.push_back(nd);
+						}
+					}
+				}
+			}
+		}
+
+		{
+			Vector<GDMonoProperty *> properties = top->get_all_properties();
+			for (int i = 0; i < properties.size(); i++) {
+				if (!properties[i]->is_static()) {
+					MultiplayerAPI::RPCMode mode = p_script->_member_get_rpc_mode(properties[i]);
+					if (MultiplayerAPI::RPC_MODE_DISABLED != mode) {
+						ScriptNetData nd;
+						nd.name = properties[i]->get_name();
+						nd.mode = mode;
+						if (-1 == p_script->rpc_variables.find(nd)) {
+							p_script->rpc_variables.push_back(nd);
+						}
+					}
+				}
+			}
+		}
+
 		top = top->get_parent_class();
 	}
 
+	// Sort so we are 100% that they are always the same.
+	p_script->rpc_functions.sort_custom<SortNetData>();
+	p_script->rpc_variables.sort_custom<SortNetData>();
+
 	p_script->load_script_signals(p_script->script_class, p_script->native);
-#ifdef TOOLS_ENABLED
-	p_script->_update_member_info_no_exports();
-#endif
 }
 
 bool CSharpScript::can_instance() const {
@@ -3341,123 +3377,14 @@ Error CSharpScript::reload(bool p_keep_state) {
 			print_verbose("Found class " + script_class->get_full_name() + " for script " + get_path());
 #endif
 
-			tool = script_class->has_attribute(CACHED_CLASS(ToolAttribute));
-
-			if (!tool) {
-				GDMonoClass *nesting_class = script_class->get_nesting_class();
-				tool = nesting_class && nesting_class->has_attribute(CACHED_CLASS(ToolAttribute));
-			}
-
-#if TOOLS_ENABLED
-			if (!tool) {
-				tool = script_class->get_assembly() == GDMono::get_singleton()->get_tools_assembly();
-			}
-#endif
-
 			native = GDMonoUtils::get_class_native_base(script_class);
 
 			CRASH_COND(native == nullptr);
 
-			GDMonoClass *base_class = script_class->get_parent_class();
+			update_script_class_info(this);
 
-			if (base_class != native) {
-				base = base_class;
-			}
-
-#ifdef DEBUG_ENABLED
-			// For debug builds, we must fetch from all native base methods as well.
-			// Native base methods must be fetched before the current class.
-			// Not needed if the script class itself is a native class.
-
-			if (script_class != native) {
-				GDMonoClass *native_top = native;
-				while (native_top) {
-					native_top->fetch_methods_with_godot_api_checks(native);
-
-					if (native_top == CACHED_CLASS(GodotObject)) {
-						break;
-					}
-
-					native_top = native_top->get_parent_class();
-				}
-			}
-#endif
-
-			script_class->fetch_methods_with_godot_api_checks(native);
-
-			// Need to fetch method from base classes as well
-			GDMonoClass *top = script_class;
-			while (top && top != native) {
-				top->fetch_methods_with_godot_api_checks(native);
-				top = top->get_parent_class();
-			}
-
-			load_script_signals(script_class, native);
 			_update_exports();
 		}
-
-		rpc_functions.clear();
-		rpc_variables.clear();
-
-		GDMonoClass *top = script_class;
-		while (top && top != native) {
-			{
-				Vector<GDMonoMethod *> methods = top->get_all_methods();
-				for (int i = 0; i < methods.size(); i++) {
-					if (!methods[i]->is_static()) {
-						MultiplayerAPI::RPCMode mode = _member_get_rpc_mode(methods[i]);
-						if (MultiplayerAPI::RPC_MODE_DISABLED != mode) {
-							ScriptNetData nd;
-							nd.name = methods[i]->get_name();
-							nd.mode = mode;
-							if (-1 == rpc_functions.find(nd)) {
-								rpc_functions.push_back(nd);
-							}
-						}
-					}
-				}
-			}
-
-			{
-				Vector<GDMonoField *> fields = top->get_all_fields();
-				for (int i = 0; i < fields.size(); i++) {
-					if (!fields[i]->is_static()) {
-						MultiplayerAPI::RPCMode mode = _member_get_rpc_mode(fields[i]);
-						if (MultiplayerAPI::RPC_MODE_DISABLED != mode) {
-							ScriptNetData nd;
-							nd.name = fields[i]->get_name();
-							nd.mode = mode;
-							if (-1 == rpc_variables.find(nd)) {
-								rpc_variables.push_back(nd);
-							}
-						}
-					}
-				}
-			}
-
-			{
-				Vector<GDMonoProperty *> properties = top->get_all_properties();
-				for (int i = 0; i < properties.size(); i++) {
-					if (!properties[i]->is_static()) {
-						MultiplayerAPI::RPCMode mode = _member_get_rpc_mode(properties[i]);
-						if (MultiplayerAPI::RPC_MODE_DISABLED != mode) {
-							ScriptNetData nd;
-							nd.name = properties[i]->get_name();
-							nd.mode = mode;
-							if (-1 == rpc_variables.find(nd)) {
-								rpc_variables.push_back(nd);
-							}
-						}
-					}
-				}
-			}
-
-			top = top->get_parent_class();
-		}
-
-		// Sort so we are 100% that they are always the same.
-		rpc_functions.sort_custom<SortNetData>();
-		rpc_variables.sort_custom<SortNetData>();
 
 		return OK;
 	}
@@ -3759,13 +3686,9 @@ Error ResourceFormatSaverCSharpScript::save(const String &p_path, const RES &p_r
 
 #ifdef TOOLS_ENABLED
 	if (!FileAccess::exists(p_path)) {
-		// The file does not yet exists, let's assume the user just created this script
-
-		if (_create_project_solution_if_needed()) {
-			CSharpProject::add_item(GodotSharpDirs::get_project_csproj_path(),
-					"Compile",
-					ProjectSettings::get_singleton()->globalize_path(p_path));
-		} else {
+		// The file does not yet exist, let's assume the user just created this script. In such
+		// cases we need to check whether the solution and csproj were already created or not.
+		if (!_create_project_solution_if_needed()) {
 			ERR_PRINT("C# project could not be created; cannot add file: '" + p_path + "'.");
 		}
 	}

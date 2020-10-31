@@ -250,11 +250,7 @@ void SceneTree::call_group_flags(uint32_t p_call_flags, const StringName &p_grou
 			}
 
 			if (p_call_flags & GROUP_CALL_REALTIME) {
-				if (p_call_flags & GROUP_CALL_MULTILEVEL) {
-					nodes[i]->call_multilevel(p_function, VARIANT_ARG_PASS);
-				} else {
-					nodes[i]->call(p_function, VARIANT_ARG_PASS);
-				}
+				nodes[i]->call(p_function, VARIANT_ARG_PASS);
 			} else {
 				MessageQueue::get_singleton()->push_call(nodes[i], p_function, VARIANT_ARG_PASS);
 			}
@@ -267,11 +263,7 @@ void SceneTree::call_group_flags(uint32_t p_call_flags, const StringName &p_grou
 			}
 
 			if (p_call_flags & GROUP_CALL_REALTIME) {
-				if (p_call_flags & GROUP_CALL_MULTILEVEL) {
-					nodes[i]->call_multilevel(p_function, VARIANT_ARG_PASS);
-				} else {
-					nodes[i]->call(p_function, VARIANT_ARG_PASS);
-				}
+				nodes[i]->call(p_function, VARIANT_ARG_PASS);
 			} else {
 				MessageQueue::get_singleton()->push_call(nodes[i], p_function, VARIANT_ARG_PASS);
 			}
@@ -883,8 +875,15 @@ void SceneTree::_call_input_pause(const StringName &p_group, const StringName &p
 			continue;
 		}
 
-		n->call_multilevel(p_method, (const Variant **)v, 1);
-		//ERR_FAIL_COND(node_count != g.nodes.size());
+		Callable::CallError err;
+		// Call both script and native method.
+		if (n->get_script_instance()) {
+			n->get_script_instance()->call(p_method, (const Variant **)v, 1, err);
+		}
+		MethodBind *method = ClassDB::get_method(n->get_class_name(), p_method);
+		if (method) {
+			method->call(n, (const Variant **)v, 1, err);
+		}
 	}
 
 	call_lock--;
@@ -1384,13 +1383,22 @@ SceneTree::SceneTree() {
 	root->set_as_audio_listener_2d(true);
 	current_scene = nullptr;
 
-	int msaa_mode = GLOBAL_DEF("rendering/quality/screen_filters/msaa", 0);
+	const int msaa_mode = GLOBAL_DEF("rendering/quality/screen_filters/msaa", 0);
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/screen_filters/msaa", PropertyInfo(Variant::INT, "rendering/quality/screen_filters/msaa", PROPERTY_HINT_ENUM, "Disabled (Fastest),2x (Fast),4x (Average),8x (Slow),16x (Slower)"));
 	root->set_msaa(Viewport::MSAA(msaa_mode));
 
-	int ssaa_mode = GLOBAL_DEF("rendering/quality/screen_filters/screen_space_aa", 0);
+	const int ssaa_mode = GLOBAL_DEF("rendering/quality/screen_filters/screen_space_aa", 0);
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/quality/screen_filters/screen_space_aa", PropertyInfo(Variant::INT, "rendering/quality/screen_filters/screen_space_aa", PROPERTY_HINT_ENUM, "Disabled (Fastest),FXAA (Fast)"));
 	root->set_screen_space_aa(Viewport::ScreenSpaceAA(ssaa_mode));
+
+	const bool use_debanding = GLOBAL_DEF("rendering/quality/screen_filters/use_debanding", false);
+	root->set_use_debanding(use_debanding);
+
+	bool snap_2d_transforms = GLOBAL_DEF("rendering/quality/2d/snap_2d_transforms_to_pixel", false);
+	root->set_snap_2d_transforms_to_pixel(snap_2d_transforms);
+
+	bool snap_2d_vertices = GLOBAL_DEF("rendering/quality/2d/snap_2d_vertices_to_pixel", false);
+	root->set_snap_2d_vertices_to_pixel(snap_2d_vertices);
 
 	{ //load default fallback environment
 		//get possible extensions

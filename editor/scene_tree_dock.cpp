@@ -1100,6 +1100,7 @@ void SceneTreeDock::_notification(int p_what) {
 			node_shortcuts_toggle->set_name("NodeShortcutsToggle");
 			node_shortcuts_toggle->set_icon(get_theme_icon("Favorites", "EditorIcons"));
 			node_shortcuts_toggle->set_toggle_mode(true);
+			node_shortcuts_toggle->set_tooltip(TTR("Switch to Favorite Nodes"));
 			node_shortcuts_toggle->set_pressed(EDITOR_GET("_use_favorites_root_selection"));
 			node_shortcuts_toggle->set_anchors_and_margins_preset(Control::PRESET_CENTER_RIGHT);
 			node_shortcuts_toggle->connect("pressed", callable_mp(this, &SceneTreeDock::_update_create_root_dialog));
@@ -1114,7 +1115,7 @@ void SceneTreeDock::_notification(int p_what) {
 			beginner_node_shortcuts->set_name("BeginnerNodeShortcuts");
 			node_shortcuts->add_child(beginner_node_shortcuts);
 
-			Button *button_2d = memnew(Button);
+			button_2d = memnew(Button);
 			beginner_node_shortcuts->add_child(button_2d);
 			button_2d->set_text(TTR("2D Scene"));
 			button_2d->set_icon(get_theme_icon("Node2D", "EditorIcons"));
@@ -1126,7 +1127,7 @@ void SceneTreeDock::_notification(int p_what) {
 			button_3d->set_icon(get_theme_icon("Node3D", "EditorIcons"));
 			button_3d->connect("pressed", callable_mp(this, &SceneTreeDock::_tool_selected), make_binds(TOOL_CREATE_3D_SCENE, false));
 
-			Button *button_ui = memnew(Button);
+			button_ui = memnew(Button);
 			beginner_node_shortcuts->add_child(button_ui);
 			button_ui->set_text(TTR("User Interface"));
 			button_ui->set_icon(get_theme_icon("Control", "EditorIcons"));
@@ -1136,11 +1137,11 @@ void SceneTreeDock::_notification(int p_what) {
 			favorite_node_shortcuts->set_name("FavoriteNodeShortcuts");
 			node_shortcuts->add_child(favorite_node_shortcuts);
 
-			Button *button_custom = memnew(Button);
+			button_custom = memnew(Button);
 			node_shortcuts->add_child(button_custom);
 			button_custom->set_text(TTR("Other Node"));
 			button_custom->set_icon(get_theme_icon("Add", "EditorIcons"));
-			button_custom->connect("pressed", callable_mp(this, &SceneTreeDock::_tool_selected), make_binds(TOOL_NEW, false));
+			button_custom->connect("pressed", callable_bind(callable_mp(this, &SceneTreeDock::_tool_selected), TOOL_NEW, false));
 
 			node_shortcuts->add_spacer();
 			create_root_dialog->add_child(node_shortcuts);
@@ -1159,6 +1160,10 @@ void SceneTreeDock::_notification(int p_what) {
 			button_instance->set_icon(get_theme_icon("Instance", "EditorIcons"));
 			button_create_script->set_icon(get_theme_icon("ScriptCreate", "EditorIcons"));
 			button_detach_script->set_icon(get_theme_icon("ScriptRemove", "EditorIcons"));
+			button_2d->set_icon(get_theme_icon("Node2D", "EditorIcons"));
+			button_3d->set_icon(get_theme_icon("Node3D", "EditorIcons"));
+			button_ui->set_icon(get_theme_icon("Control", "EditorIcons"));
+			button_custom->set_icon(get_theme_icon("Add", "EditorIcons"));
 
 			filter->set_right_icon(get_theme_icon("Search", "EditorIcons"));
 			filter->set_clear_button_enabled(true);
@@ -1313,31 +1318,49 @@ void SceneTreeDock::perform_node_renames(Node *p_base, List<Pair<NodePath, NodeP
 		if (si) {
 			List<PropertyInfo> properties;
 			si->get_property_list(&properties);
+			NodePath root_path = p_base->get_path();
 
 			for (List<PropertyInfo>::Element *E = properties.front(); E; E = E->next()) {
 				String propertyname = E->get().name;
 				Variant p = p_base->get(propertyname);
 				if (p.get_type() == Variant::NODE_PATH) {
+					NodePath root_path_new = root_path;
+					for (List<Pair<NodePath, NodePath>>::Element *F = p_renames->front(); F; F = F->next()) {
+						if (root_path == F->get().first) {
+							root_path_new = F->get().second;
+							break;
+						}
+					}
+
 					// Goes through all paths to check if its matching
 					for (List<Pair<NodePath, NodePath>>::Element *F = p_renames->front(); F; F = F->next()) {
-						NodePath root_path = p_base->get_path();
-
 						NodePath rel_path_old = root_path.rel_path_to(F->get().first);
-
-						NodePath rel_path_new = F->get().second;
-
-						// if not empty, get new relative path
-						if (F->get().second != NodePath()) {
-							rel_path_new = root_path.rel_path_to(F->get().second);
-						}
 
 						// if old path detected, then it needs to be replaced with the new one
 						if (p == rel_path_old) {
+							NodePath rel_path_new = F->get().second;
+
+							// if not empty, get new relative path
+							if (!rel_path_new.is_empty()) {
+								rel_path_new = root_path_new.rel_path_to(F->get().second);
+							}
+
 							editor_data->get_undo_redo().add_do_property(p_base, propertyname, rel_path_new);
 							editor_data->get_undo_redo().add_undo_property(p_base, propertyname, rel_path_old);
 
 							p_base->set(propertyname, rel_path_new);
 							break;
+						}
+
+						// update if the node itself moved up/down the tree hirarchy
+						if (root_path == F->get().first) {
+							NodePath abs_path = NodePath(String(root_path).plus_file(p)).simplified();
+							NodePath rel_path_new = F->get().second.rel_path_to(abs_path);
+
+							editor_data->get_undo_redo().add_do_property(p_base, propertyname, rel_path_new);
+							editor_data->get_undo_redo().add_undo_property(p_base, propertyname, p);
+
+							p_base->set(propertyname, rel_path_new);
 						}
 					}
 				}
@@ -1739,6 +1762,8 @@ void SceneTreeDock::_script_created(Ref<Script> p_script) {
 
 void SceneTreeDock::_script_creation_closed() {
 	script_create_dialog->disconnect("script_created", callable_mp(this, &SceneTreeDock::_script_created));
+	script_create_dialog->disconnect("confirmed", callable_mp(this, &SceneTreeDock::_script_creation_closed));
+	script_create_dialog->disconnect("cancelled", callable_mp(this, &SceneTreeDock::_script_creation_closed));
 }
 
 void SceneTreeDock::_toggle_editable_children_from_selection() {
@@ -2084,8 +2109,12 @@ void SceneTreeDock::replace_node(Node *p_node, Node *p_by_node, bool p_keep_prop
 			}
 
 			if (E->get().name == "__meta__") {
-				if (Object::cast_to<CanvasItem>(newnode)) {
-					Dictionary metadata = n->get(E->get().name);
+				Dictionary metadata = n->get(E->get().name);
+				if (metadata.has("_editor_description_")) {
+					newnode->set_meta("_editor_description_", metadata["_editor_description_"]);
+				}
+
+				if (Object::cast_to<CanvasItem>(newnode) || Object::cast_to<Node3D>(newnode)) {
 					if (metadata.has("_edit_group_") && metadata["_edit_group_"]) {
 						newnode->set_meta("_edit_group_", true);
 					}
@@ -2624,7 +2653,8 @@ void SceneTreeDock::attach_script_to_selected(bool p_extend) {
 	}
 
 	script_create_dialog->connect("script_created", callable_mp(this, &SceneTreeDock::_script_created));
-	script_create_dialog->connect("popup_hide", callable_mp(this, &SceneTreeDock::_script_creation_closed), varray(), CONNECT_ONESHOT);
+	script_create_dialog->connect("confirmed", callable_mp(this, &SceneTreeDock::_script_creation_closed));
+	script_create_dialog->connect("cancelled", callable_mp(this, &SceneTreeDock::_script_creation_closed));
 	script_create_dialog->set_inheritance_base_type("Node");
 	script_create_dialog->config(inherits, path);
 	script_create_dialog->popup_centered();
@@ -2717,7 +2747,7 @@ void SceneTreeDock::_update_create_root_dialog() {
 				if (l != String()) {
 					Button *button = memnew(Button);
 					favorite_nodes->add_child(button);
-					button->set_text(TTR(l));
+					button->set_text(l);
 					String name = l.get_slicec(' ', 0);
 					if (ScriptServer::is_global_class(name)) {
 						name = ScriptServer::get_global_class_native_base(name);

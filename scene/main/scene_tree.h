@@ -28,8 +28,8 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#ifndef SCENE_MAIN_LOOP_H
-#define SCENE_MAIN_LOOP_H
+#ifndef SCENE_TREE_H
+#define SCENE_TREE_H
 
 #include "core/io/multiplayer_api.h"
 #include "core/os/main_loop.h"
@@ -223,7 +223,6 @@ public:
 		GROUP_CALL_REVERSE = 1,
 		GROUP_CALL_REALTIME = 2,
 		GROUP_CALL_UNIQUE = 4,
-		GROUP_CALL_MULTILEVEL = 8,
 	};
 
 	_FORCE_INLINE_ Window *get_root() const { return root; }
@@ -355,4 +354,4 @@ public:
 
 VARIANT_ENUM_CAST(SceneTree::GroupCallFlags);
 
-#endif
+#endif // SCENE_TREE_H

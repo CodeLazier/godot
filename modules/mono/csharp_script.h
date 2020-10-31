@@ -164,6 +164,7 @@ private:
 	// Do not use unless you know what you are doing
 	friend void GDMonoInternals::tie_managed_to_unmanaged(MonoObject *, Object *);
 	static Ref<CSharpScript> create_for_managed_type(GDMonoClass *p_class, GDMonoClass *p_native);
+	static void update_script_class_info(Ref<CSharpScript> p_script);
 	static void initialize_for_managed_type(Ref<CSharpScript> p_script, GDMonoClass *p_class, GDMonoClass *p_native);
 
 	MultiplayerAPI::RPCMode _member_get_rpc_mode(IMonoClassMember *p_member) const;
@@ -265,8 +266,6 @@ class CSharpInstance : public ScriptInstance {
 	friend void GDMonoInternals::tie_managed_to_unmanaged(MonoObject *, Object *);
 	static CSharpInstance *create_for_managed_type(Object *p_owner, CSharpScript *p_script, const MonoGCHandleData &p_gchandle);
 
-	void _call_multilevel(MonoObject *p_mono_object, const StringName &p_method, const Variant **p_args, int p_argcount);
-
 	void get_properties_state_for_reloading(List<Pair<StringName, Variant>> &r_state);
 	void get_event_signals_state_for_reloading(List<Pair<StringName, Array>> &r_state);
 
@@ -285,13 +284,11 @@ public:
 	/* TODO */ void get_method_list(List<MethodInfo> *p_list) const override {}
 	bool has_method(const StringName &p_method) const override;
 	Variant call(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) override;
-	void call_multilevel(const StringName &p_method, const Variant **p_args, int p_argcount) override;
-	void call_multilevel_reversed(const StringName &p_method, const Variant **p_args, int p_argcount) override;
 
 	void mono_object_disposed(MonoObject *p_obj);
 
 	/*
-	 * If 'r_delete_owner' is set to true, the caller must memdelete the script instance's owner. Otherwise, ifevent_signal
+	 * If 'r_delete_owner' is set to true, the caller must memdelete the script instance's owner. Otherwise, if
 	 * 'r_remove_script_instance' is set to true, the caller must destroy the script instance by removing it from its owner.
 	 */
 	void mono_object_disposed_baseref(MonoObject *p_obj, bool p_is_finalizer, bool &r_delete_owner, bool &r_remove_script_instance);

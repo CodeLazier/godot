@@ -31,7 +31,7 @@
 #ifndef PHYSICS_SERVER_H
 #define PHYSICS_SERVER_H
 
-#include "core/object.h"
+#include "core/class_db.h"
 #include "core/resource.h"
 
 class PhysicsDirectSpaceState3D;
@@ -785,7 +785,7 @@ class PhysicsServer3DManager {
 				name(p_ci.name),
 				create_callback(p_ci.create_callback) {}
 
-		ClassInfo operator=(const ClassInfo &p_ci) {
+		ClassInfo &operator=(const ClassInfo &p_ci) {
 			name = p_ci.name;
 			create_callback = p_ci.create_callback;
 			return *this;

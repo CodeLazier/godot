@@ -31,15 +31,14 @@
 #ifndef MESSAGE_QUEUE_H
 #define MESSAGE_QUEUE_H
 
-#include "core/object.h"
+#include "core/class_db.h"
 #include "core/os/thread_safe.h"
 
 class MessageQueue {
 	_THREAD_SAFE_CLASS_
 
 	enum {
-
-		DEFAULT_QUEUE_SIZE_KB = 1024
+		DEFAULT_QUEUE_SIZE_KB = 4096
 	};
 
 	enum {

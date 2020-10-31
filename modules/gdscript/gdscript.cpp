@@ -596,6 +596,19 @@ Error GDScript::reload(bool p_keep_state) {
 		return OK;
 	}
 
+	{
+		String source_path = path;
+		if (source_path.empty()) {
+			source_path = get_path();
+		}
+		if (!source_path.empty()) {
+			MutexLock lock(GDScriptCache::singleton->lock);
+			if (!GDScriptCache::singleton->shallow_gdscript_cache.has(source_path)) {
+				GDScriptCache::singleton->shallow_gdscript_cache[source_path] = this;
+			}
+		}
+	}
+
 	valid = false;
 	GDScriptParser parser;
 	Error err = parser.parse(source, path, false);
@@ -1031,8 +1044,10 @@ GDScript::~GDScript() {
 		MutexLock lock(GDScriptLanguage::get_singleton()->lock);
 
 		while (SelfList<GDScriptFunctionState> *E = pending_func_states.first()) {
-			E->self()->_clear_stack();
+			// Order matters since clearing the stack may already cause
+			// the GDSCriptFunctionState to be destroyed and thus removed from the list.
 			pending_func_states.remove(E);
+			E->self()->_clear_stack();
 		}
 	}
 
@@ -1040,7 +1055,9 @@ GDScript::~GDScript() {
 		memdelete(E->get());
 	}
 
-	GDScriptCache::remove_script(get_path());
+	if (GDScriptCache::singleton) { // Cache may have been already destroyed at engine shutdown.
+		GDScriptCache::remove_script(get_path());
+	}
 
 	_save_orphaned_subclasses();
 
@@ -1309,39 +1326,6 @@ Variant GDScriptInstance::call(const StringName &p_method, const Variant **p_arg
 	return Variant();
 }
 
-void GDScriptInstance::call_multilevel(const StringName &p_method, const Variant **p_args, int p_argcount) {
-	GDScript *sptr = script.ptr();
-	Callable::CallError ce;
-
-	while (sptr) {
-		Map<StringName, GDScriptFunction *>::Element *E = sptr->member_functions.find(p_method);
-		if (E) {
-			E->get()->call(this, p_args, p_argcount, ce);
-			return;
-		}
-		sptr = sptr->_base;
-	}
-}
-
-void GDScriptInstance::_ml_call_reversed(GDScript *sptr, const StringName &p_method, const Variant **p_args, int p_argcount) {
-	if (sptr->_base) {
-		_ml_call_reversed(sptr->_base, p_method, p_args, p_argcount);
-	}
-
-	Callable::CallError ce;
-
-	Map<StringName, GDScriptFunction *>::Element *E = sptr->member_functions.find(p_method);
-	if (E) {
-		E->get()->call(this, p_args, p_argcount, ce);
-	}
-}
-
-void GDScriptInstance::call_multilevel_reversed(const StringName &p_method, const Variant **p_args, int p_argcount) {
-	if (script.ptr()) {
-		_ml_call_reversed(script.ptr(), p_method, p_args, p_argcount);
-	}
-}
-
 void GDScriptInstance::notification(int p_notification) {
 	//notification is not virtual, it gets called at ALL levels just like in C.
 	Variant value = p_notification;
@@ -1469,8 +1453,10 @@ GDScriptInstance::~GDScriptInstance() {
 	MutexLock lock(GDScriptLanguage::get_singleton()->lock);
 
 	while (SelfList<GDScriptFunctionState> *E = pending_func_states.first()) {
-		E->self()->_clear_stack();
+		// Order matters since clearing the stack may already cause
+		// the GDSCriptFunctionState to be destroyed and thus removed from the list.
 		pending_func_states.remove(E);
+		E->self()->_clear_stack();
 	}
 
 	if (script.is_valid() && owner) {
@@ -2055,7 +2041,33 @@ GDScriptLanguage::~GDScriptLanguage() {
 	if (_call_stack) {
 		memdelete_arr(_call_stack);
 	}
-	singleton = nullptr;
+
+	// Clear dependencies between scripts, to ensure cyclic references are broken (to avoid leaks at exit).
+	SelfList<GDScript> *s = script_list.first();
+	while (s) {
+		GDScript *script = s->self();
+		// This ensures the current script is not released before we can check what's the next one
+		// in the list (we can't get the next upfront because we don't know if the reference breaking
+		// will cause it -or any other after it, for that matter- to be released so the next one
+		// is not the same as before).
+		script->reference();
+
+		for (Map<StringName, GDScriptFunction *>::Element *E = script->member_functions.front(); E; E = E->next()) {
+			GDScriptFunction *func = E->get();
+			for (int i = 0; i < func->argument_types.size(); i++) {
+				func->argument_types.write[i].script_type_ref = Ref<Script>();
+			}
+			func->return_type.script_type_ref = Ref<Script>();
+		}
+		for (Map<StringName, GDScript::MemberInfo>::Element *E = script->member_indices.front(); E; E = E->next()) {
+			E->get().data_type.script_type_ref = Ref<Script>();
+		}
+
+		s = s->next();
+		script->unreference();
+	}
+
+	singleton = NULL;
 }
 
 void GDScriptLanguage::add_orphan_subclass(const String &p_qualified_name, const ObjectID &p_subclass) {

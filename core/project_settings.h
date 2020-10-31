@@ -31,7 +31,7 @@
 #ifndef PROJECT_SETTINGS_H
 #define PROJECT_SETTINGS_H
 
-#include "core/object.h"
+#include "core/class_db.h"
 #include "core/os/thread_safe.h"
 #include "core/set.h"
 
@@ -41,6 +41,7 @@ class ProjectSettings : public Object {
 
 public:
 	typedef Map<String, Variant> CustomMap;
+	static const String IMPORTED_FILES_PATH;
 
 	enum {
 		//properties that are not for built in values begin from this value, so builtin ones are displayed first
@@ -62,6 +63,9 @@ protected:
 		bool hide_from_editor = false;
 		bool overridden = false;
 		bool restart_if_changed = false;
+#ifdef DEBUG_METHODS_ENABLED
+		bool ignore_value_in_docs = false;
+#endif
 
 		VariantContainer() {}
 
@@ -73,8 +77,8 @@ protected:
 	};
 
 	bool registering_order = true;
-	int last_order = 0;
-	int last_builtin_order = NO_BUILTIN_ORDER_BASE;
+	int last_order = NO_BUILTIN_ORDER_BASE;
+	int last_builtin_order = 0;
 	Map<StringName, VariantContainer> props;
 	String resource_path;
 	Map<StringName, PropertyInfo> custom_prop_info;
@@ -104,7 +108,7 @@ protected:
 
 	void _convert_to_last_version(int p_from_version);
 
-	bool _load_resource_pack(const String &p_pack, bool p_replace_files = true);
+	bool _load_resource_pack(const String &p_pack, bool p_replace_files = true, int p_offset = 0);
 
 	void _add_property_info_bind(const Dictionary &p_info);
 
@@ -125,6 +129,9 @@ public:
 
 	void set_initial_value(const String &p_name, const Variant &p_value);
 	void set_restart_if_changed(const String &p_name, bool p_restart);
+	void set_ignore_value_in_docs(const String &p_name, bool p_ignore);
+	bool get_ignore_value_in_docs(const String &p_name) const;
+
 	bool property_can_revert(const String &p_name);
 	Variant property_get_revert(const String &p_name);
 
@@ -136,6 +143,7 @@ public:
 	int get_order(const String &p_name) const;
 	void set_order(const String &p_name, int p_order);
 	void set_builtin_order(const String &p_name);
+	bool is_builtin_setting(const String &p_name) const;
 
 	Error setup(const String &p_path, const String &p_main_pack, bool p_upwards = false);
 
@@ -167,9 +175,11 @@ public:
 };
 
 //not a macro any longer
-Variant _GLOBAL_DEF(const String &p_var, const Variant &p_default, bool p_restart_if_changed = false);
+Variant _GLOBAL_DEF(const String &p_var, const Variant &p_default, bool p_restart_if_changed = false, bool p_ignore_value_in_docs = false);
 #define GLOBAL_DEF(m_var, m_value) _GLOBAL_DEF(m_var, m_value)
 #define GLOBAL_DEF_RST(m_var, m_value) _GLOBAL_DEF(m_var, m_value, true)
+#define GLOBAL_DEF_NOVAL(m_var, m_value) _GLOBAL_DEF(m_var, m_value, false, true)
+#define GLOBAL_DEF_RST_NOVAL(m_var, m_value) _GLOBAL_DEF(m_var, m_value, true, true)
 #define GLOBAL_GET(m_var) ProjectSettings::get_singleton()->get(m_var)
 
 #endif // PROJECT_SETTINGS_H
